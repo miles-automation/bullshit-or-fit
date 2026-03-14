@@ -33,4 +33,4 @@ typecheck:
 check: lint format-check typecheck test
 
 build:
-	docker build --platform linux/amd64 -t ghcr.io/richmiles/bullshit-or-fit:latest .
+	docker build --platform linux/amd64 -t ghcr.io/miles-automation/bullshit-or-fit:latest .

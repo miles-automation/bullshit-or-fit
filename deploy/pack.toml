@@ -3,7 +3,7 @@ name = "bullshit-or-fit"
 health_path = "/healthz"
 
 [build]
-image = "ghcr.io/richmiles/bullshit-or-fit"
+image = "ghcr.io/miles-automation/bullshit-or-fit"
 
 [checks]
 health_retries = 45
