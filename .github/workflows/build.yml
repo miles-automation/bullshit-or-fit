@@ -9,14 +9,14 @@ on:
         description: "Runner target for manual runs"
         required: true
         type: choice
-        default: "ubuntu-latest"
+        default: "self-hosted-canary"
         options:
           - self-hosted-canary
           - ubuntu-latest
 
 jobs:
   docker:
-    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner_target == 'self-hosted-canary' && '["self-hosted","linux","x64","do-1gb-canary"]' || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.runner_target == 'ubuntu-latest' && '"ubuntu-latest"' || '["self-hosted","linux","x64","do-1gb-canary"]') }}
     permissions:
       contents: read
       packages: write
@@ -36,5 +36,5 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/richmiles/bullshit-or-fit:latest
-            ghcr.io/richmiles/bullshit-or-fit:sha-${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/bullshit-or-fit:latest
+            ghcr.io/${{ github.repository_owner }}/bullshit-or-fit:sha-${{ github.sha }}
