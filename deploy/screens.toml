@@ -1,0 +1,37 @@
+version = 1
+
+[project]
+key = "bullshit-or-fit"
+display_name = "Bullshit or Fit"
+
+[dev]
+start_command = "make dev-frontend"
+frontend_port = 5173
+backend_port = 8000
+ready_url = "http://localhost:{frontend_port}"
+ready_timeout_seconds = 30
+
+[auth]
+mode = "none"
+
+[[screens]]
+id = "landing"
+route = "/"
+description = "Landing page - Hero + lead form"
+auth_required = false
+viewport = { width = 1440, height = 900 }
+
+[[screens]]
+id = "landing-mobile"
+route = "/"
+description = "Landing page (mobile)"
+auth_required = false
+viewport = { width = 390, height = 844 }
+
+[[screens]]
+id = "landing-full"
+route = "/"
+description = "Full landing page (scrollable)"
+auth_required = false
+viewport = { width = 1440, height = 900 }
+full_page = true
