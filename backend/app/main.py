@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-import os
 from pathlib import Path
 
 import httpx
@@ -10,10 +7,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
-SPARK_SWARM_API_URL = os.getenv(
-    "SPARK_SWARM_API_URL", "https://swarm.sparkswarm.com/api/v1"
-).rstrip("/")
-SPARK_SLUG = os.getenv("SPARK_SLUG", "bullshit-or-fit")
+from app.config import settings
+
+SPARK_SWARM_API_URL = settings.spark_swarm_api_url.rstrip("/")
+SPARK_SLUG = settings.spark_slug
 
 
 class LeadSubmitPayload(BaseModel):
@@ -31,17 +28,25 @@ class LeadResendPayload(BaseModel):
 
 app = FastAPI(title="Bullshit or Fit", version="0.1.0")
 
-cors_origins = os.getenv(
-    "CORS_ORIGINS", "https://bullshitorfit.com,https://www.bullshitorfit.com"
-)
-allow_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+allow_origins = [
+    o.strip() for o in settings.cors_origins.split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Accept", "Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 @app.get("/healthz")
