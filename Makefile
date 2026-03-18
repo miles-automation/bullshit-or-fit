@@ -17,6 +17,7 @@ dev-frontend:
 
 test:
 	cd backend && PYTHONPATH=. ../.venv/bin/pytest -q
+	cd frontend && npm test
 
 lint:
 	cd backend && ../.venv/bin/ruff check app tests
