@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
 from app.config import settings
+from app.logging_config import configure_logging
 
 SPARK_SWARM_API_URL = settings.spark_swarm_api_url.rstrip("/")
 SPARK_SLUG = settings.spark_slug
@@ -27,10 +28,9 @@ class LeadResendPayload(BaseModel):
 
 
 app = FastAPI(title="Bullshit or Fit", version="0.1.0")
+configure_logging(settings.environment)
 
-allow_origins = [
-    o.strip() for o in settings.cors_origins.split(",") if o.strip()
-]
+allow_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
