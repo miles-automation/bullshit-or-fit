@@ -1,6 +1,34 @@
 import { useEffect, useMemo, useState } from 'react'
 
-const DEFAULT_CONFIG = {
+interface LandingConfig {
+  enabled: boolean
+  cta: string
+  headline: string
+  subheadline: string
+}
+
+interface LeadForm {
+  name: string
+  email: string
+  company: string
+  message: string
+  website: string
+}
+
+interface SignalCard {
+  title: string
+  description: string
+}
+
+interface WorkflowStep {
+  title: string
+  detail: string
+}
+
+type FormStatus = 'idle' | 'submitting' | 'success' | 'error'
+type ConfirmState = 'idle' | 'loading' | 'confirmed' | 'error'
+
+const DEFAULT_CONFIG: LandingConfig = {
   enabled: true,
   cta: 'Request Early Access',
   headline: 'Verify resume claims before you waste interview cycles',
@@ -8,14 +36,14 @@ const DEFAULT_CONFIG = {
     'Bullshit or Fit cross-checks credentials, employment claims, and public footprint evidence so you can screen with confidence.',
 }
 
-const CONFIRM_STATES = {
+const CONFIRM_STATES: Record<ConfirmState, string | null> = {
   idle: null,
   loading: 'Confirming your request...',
   confirmed: 'You are confirmed. We will follow up shortly.',
   error: 'Confirmation failed. Please request another confirmation email.',
 }
 
-const SIGNAL_CARDS = [
+const SIGNAL_CARDS: SignalCard[] = [
   {
     title: 'Employment continuity',
     description:
@@ -33,7 +61,7 @@ const SIGNAL_CARDS = [
   },
 ]
 
-const WORKFLOW_STEPS = [
+const WORKFLOW_STEPS: WorkflowStep[] = [
   {
     title: 'Submit candidate details',
     detail: 'Share the claim set you want verified before scheduling interviews.',
@@ -48,31 +76,31 @@ const WORKFLOW_STEPS = [
   },
 ]
 
-const DECISION_BRIEF_ITEMS = [
+const DECISION_BRIEF_ITEMS: string[] = [
   'Claim-by-claim verdict with confidence notes',
   'Source trail for quick recruiter handoff',
   'Recommended next step: pass, investigate, or decline',
 ]
 
 export function App() {
-  const [config, setConfig] = useState(DEFAULT_CONFIG)
-  const [form, setForm] = useState({
+  const [config, setConfig] = useState<LandingConfig>(DEFAULT_CONFIG)
+  const [form, setForm] = useState<LeadForm>({
     name: '',
     email: '',
     company: '',
     message: '',
     website: '',
   })
-  const [status, setStatus] = useState('idle')
+  const [status, setStatus] = useState<FormStatus>('idle')
   const [statusMessage, setStatusMessage] = useState('')
   const [resendEmail, setResendEmail] = useState('')
   const [resendMessage, setResendMessage] = useState('')
-  const [confirmState, setConfirmState] = useState('idle')
+  const [confirmState, setConfirmState] = useState<ConfirmState>('idle')
 
   useEffect(() => {
     fetch('/api/landing-config')
       .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
+      .then((json: Partial<LandingConfig> | null) => {
         if (!json) return
         setConfig((prev) => ({
           ...prev,
@@ -97,7 +125,7 @@ export function App() {
       .catch(() => setConfirmState('error'))
   }, [])
 
-  async function onSubmit(event) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setStatus('submitting')
     setStatusMessage('')
@@ -129,7 +157,7 @@ export function App() {
     }
   }
 
-  async function onResend(event) {
+  async function onResend(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setResendMessage('')
     if (!resendEmail) return
@@ -255,7 +283,7 @@ export function App() {
                 Name
                 <input
                   value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, name: e.target.value }))}
                   required
                 />
               </label>
@@ -264,7 +292,7 @@ export function App() {
                 <input
                   type="email"
                   value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, email: e.target.value }))}
                   required
                 />
               </label>
@@ -272,14 +300,14 @@ export function App() {
                 Company
                 <input
                   value={form.company}
-                  onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, company: e.target.value }))}
                 />
               </label>
               <label>
                 What role are you hiring for?
                 <textarea
                   value={form.message}
-                  onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setForm((f) => ({ ...f, message: e.target.value }))}
                   rows={4}
                 />
               </label>
@@ -289,7 +317,7 @@ export function App() {
                   tabIndex={-1}
                   autoComplete="off"
                   value={form.website}
-                  onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, website: e.target.value }))}
                 />
               </label>
               <button type="submit" disabled={status === 'submitting'}>
@@ -304,7 +332,7 @@ export function App() {
                 type="email"
                 placeholder="you@company.com"
                 value={resendEmail}
-                onChange={(e) => setResendEmail(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResendEmail(e.target.value)}
                 required
               />
               <button type="submit">Resend confirmation</button>

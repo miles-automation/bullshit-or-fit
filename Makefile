@@ -30,6 +30,7 @@ format-check:
 
 typecheck:
 	cd backend && PYTHONPATH=. ../.venv/bin/mypy --config-file mypy.ini app
+	cd frontend && npx tsc --noEmit
 
 check: lint format-check typecheck test
 
