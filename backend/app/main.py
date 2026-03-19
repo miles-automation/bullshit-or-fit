@@ -14,7 +14,7 @@ SPARK_SWARM_API_URL = settings.spark_swarm_api_url.rstrip("/")
 SPARK_SLUG = settings.spark_slug
 
 
-class LeadSubmitPayload(BaseModel):
+class LeadSubmitIn(BaseModel):
     email: EmailStr
     name: str = Field(min_length=1, max_length=255)
     company: str | None = None
@@ -23,7 +23,7 @@ class LeadSubmitPayload(BaseModel):
     website: str | None = None  # honeypot
 
 
-class LeadResendPayload(BaseModel):
+class LeadResendIn(BaseModel):
     email: EmailStr
 
 
@@ -72,7 +72,7 @@ def landing_config() -> JSONResponse:
 
 
 @app.post("/api/leads/submit")
-def submit_lead(payload: LeadSubmitPayload, request: Request) -> JSONResponse:
+def submit_lead(payload: LeadSubmitIn, request: Request) -> JSONResponse:
     url = f"{SPARK_SWARM_API_URL}/public/sparks/{SPARK_SLUG}/leads"
     body = payload.model_dump()
     body["source_url"] = body.get("source_url") or str(request.url)
@@ -84,7 +84,7 @@ def submit_lead(payload: LeadSubmitPayload, request: Request) -> JSONResponse:
 
 
 @app.post("/api/leads/resend")
-def resend_confirmation(payload: LeadResendPayload) -> JSONResponse:
+def resend_confirmation(payload: LeadResendIn) -> JSONResponse:
     url = f"{SPARK_SWARM_API_URL}/public/sparks/{SPARK_SLUG}/leads/resend-confirmation"
     with httpx.Client(timeout=15) as client:
         resp = client.post(url, json=payload.model_dump())
