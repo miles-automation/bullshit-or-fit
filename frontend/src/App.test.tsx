@@ -3,8 +3,17 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from './App'
 
-function mockFetch(overrides = {}) {
-  return vi.fn((url) => {
+interface MockFetchOverrides {
+  landingConfig?: Record<string, unknown>
+  confirmOk?: boolean
+  submitOk?: boolean
+  submitMessage?: string
+  submitError?: string
+  resendOk?: boolean
+}
+
+function mockFetch(overrides: MockFetchOverrides = {}) {
+  return vi.fn((url: string) => {
     if (url === '/api/landing-config') {
       return Promise.resolve({
         ok: true,
@@ -44,11 +53,11 @@ function mockFetch(overrides = {}) {
 }
 
 describe('App', () => {
-  let originalFetch
+  let originalFetch: typeof globalThis.fetch
 
   beforeEach(() => {
     originalFetch = globalThis.fetch
-    globalThis.fetch = mockFetch()
+    globalThis.fetch = mockFetch() as unknown as typeof globalThis.fetch
     // Reset URL to avoid confirm token side effects
     Object.defineProperty(window, 'location', {
       value: { href: 'http://localhost/', search: '' },
@@ -111,7 +120,7 @@ describe('App', () => {
           headline: 'Custom headline from API',
           cta: 'Join Now',
         },
-      })
+      }) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
@@ -122,7 +131,7 @@ describe('App', () => {
     })
 
     it('keeps defaults when config fetch fails', async () => {
-      globalThis.fetch = vi.fn(() => Promise.reject(new Error('Network error')))
+      globalThis.fetch = vi.fn(() => Promise.reject(new Error('Network error'))) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
@@ -134,7 +143,7 @@ describe('App', () => {
   describe('lead form submission', () => {
     it('submits form and shows success message', async () => {
       const user = userEvent.setup()
-      globalThis.fetch = mockFetch()
+      globalThis.fetch = mockFetch() as unknown as typeof globalThis.fetch
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
@@ -153,8 +162,8 @@ describe('App', () => {
 
     it('shows submitting state while request is in flight', async () => {
       const user = userEvent.setup()
-      let resolveSubmit
-      globalThis.fetch = vi.fn((url) => {
+      let resolveSubmit: (value: unknown) => void
+      globalThis.fetch = vi.fn((url: string) => {
         if (url === '/api/landing-config') {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
         }
@@ -164,7 +173,7 @@ describe('App', () => {
           })
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
-      })
+      }) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
@@ -179,12 +188,12 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: /submitting/i })).toBeDisabled()
 
       // Resolve to clean up
-      resolveSubmit({ ok: true, json: () => Promise.resolve({ message: 'OK' }) })
+      resolveSubmit!({ ok: true, json: () => Promise.resolve({ message: 'OK' }) })
     })
 
     it('shows error message on submission failure', async () => {
       const user = userEvent.setup()
-      globalThis.fetch = mockFetch({ submitOk: false, submitError: 'Rate limit exceeded.' })
+      globalThis.fetch = mockFetch({ submitOk: false, submitError: 'Rate limit exceeded.' }) as unknown as typeof globalThis.fetch
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
@@ -201,11 +210,11 @@ describe('App', () => {
 
     it('shows network error message when fetch throws', async () => {
       const user = userEvent.setup()
-      globalThis.fetch = vi.fn((url) => {
+      globalThis.fetch = vi.fn((url: string) => {
         if (url === '/api/landing-config') return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
         if (url === '/api/leads/submit') return Promise.reject(new Error('Network failure'))
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
-      })
+      }) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
@@ -223,7 +232,7 @@ describe('App', () => {
 
     it('clears form fields after successful submission', async () => {
       const user = userEvent.setup()
-      globalThis.fetch = mockFetch()
+      globalThis.fetch = mockFetch() as unknown as typeof globalThis.fetch
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
@@ -243,7 +252,7 @@ describe('App', () => {
   describe('resend confirmation', () => {
     it('sends resend request and shows feedback', async () => {
       const user = userEvent.setup()
-      globalThis.fetch = mockFetch()
+      globalThis.fetch = mockFetch() as unknown as typeof globalThis.fetch
       render(<App />)
 
       const resendInput = screen.getByPlaceholderText('you@company.com')
@@ -259,7 +268,7 @@ describe('App', () => {
 
     it('shows error when resend fails', async () => {
       const user = userEvent.setup()
-      globalThis.fetch = mockFetch({ resendOk: false })
+      globalThis.fetch = mockFetch({ resendOk: false }) as unknown as typeof globalThis.fetch
       render(<App />)
 
       const resendInput = screen.getByPlaceholderText('you@company.com')
@@ -275,8 +284,11 @@ describe('App', () => {
 
   describe('email confirmation flow', () => {
     it('shows confirmed state when token is valid', async () => {
-      window.location = { href: 'http://localhost/?confirm=abc123', search: '?confirm=abc123' }
-      globalThis.fetch = mockFetch({ confirmOk: true })
+      Object.defineProperty(window, 'location', {
+        value: { href: 'http://localhost/?confirm=abc123', search: '?confirm=abc123' },
+        writable: true,
+      })
+      globalThis.fetch = mockFetch({ confirmOk: true }) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
@@ -286,8 +298,11 @@ describe('App', () => {
     })
 
     it('shows error state when confirmation fails', async () => {
-      window.location = { href: 'http://localhost/?confirm=bad', search: '?confirm=bad' }
-      globalThis.fetch = mockFetch({ confirmOk: false })
+      Object.defineProperty(window, 'location', {
+        value: { href: 'http://localhost/?confirm=bad', search: '?confirm=bad' },
+        writable: true,
+      })
+      globalThis.fetch = mockFetch({ confirmOk: false }) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
@@ -299,9 +314,12 @@ describe('App', () => {
     })
 
     it('shows loading state during confirmation', async () => {
-      window.location = { href: 'http://localhost/?confirm=abc', search: '?confirm=abc' }
-      let resolveConfirm
-      globalThis.fetch = vi.fn((url) => {
+      Object.defineProperty(window, 'location', {
+        value: { href: 'http://localhost/?confirm=abc', search: '?confirm=abc' },
+        writable: true,
+      })
+      let resolveConfirm: (value: unknown) => void
+      globalThis.fetch = vi.fn((url: string) => {
         if (url === '/api/landing-config') {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
         }
@@ -311,14 +329,14 @@ describe('App', () => {
           })
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
-      })
+      }) as unknown as typeof globalThis.fetch
 
       render(<App />)
 
       expect(screen.getByText('Confirming your request...')).toBeInTheDocument()
 
       // Clean up
-      resolveConfirm({ ok: true, json: () => Promise.resolve({}) })
+      resolveConfirm!({ ok: true, json: () => Promise.resolve({}) })
     })
   })
 })
