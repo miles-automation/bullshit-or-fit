@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+ENV PATH="/app/.venv/bin:$PATH"
 COPY backend/app ./app
 COPY --from=frontend-builder /app/frontend/dist ./static
 EXPOSE 8000
