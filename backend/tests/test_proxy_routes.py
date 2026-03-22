@@ -27,7 +27,7 @@ def _mock_httpx_response(
 
 
 class TestLandingConfig:
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.landing.httpx.Client")
     def test_returns_upstream_config(self, mock_client_cls: MagicMock) -> None:
         upstream_body = {
             "enabled": True,
@@ -46,7 +46,7 @@ class TestLandingConfig:
         assert response.status_code == 200
         assert response.json() == upstream_body
 
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.landing.httpx.Client")
     def test_upstream_error_returns_http_error(
         self, mock_client_cls: MagicMock
     ) -> None:
@@ -76,7 +76,7 @@ class TestLeadSubmit:
         "message": "Need help",
     }
 
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.leads.httpx.Client")
     def test_submit_success(self, mock_client_cls: MagicMock) -> None:
         upstream_body = {"message": "Lead created"}
         mock_client = MagicMock()
@@ -90,7 +90,7 @@ class TestLeadSubmit:
         assert response.status_code == 200
         assert response.json() == upstream_body
 
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.leads.httpx.Client")
     def test_submit_upstream_error(self, mock_client_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
@@ -122,7 +122,7 @@ class TestLeadSubmit:
 
 
 class TestLeadResend:
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.leads.httpx.Client")
     def test_resend_success(self, mock_client_cls: MagicMock) -> None:
         upstream_body = {"message": "If found, confirmation email was sent."}
         mock_client = MagicMock()
@@ -136,7 +136,7 @@ class TestLeadResend:
         assert response.status_code == 200
         assert response.json() == upstream_body
 
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.leads.httpx.Client")
     def test_resend_upstream_error(self, mock_client_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
@@ -161,7 +161,7 @@ class TestLeadResend:
 
 
 class TestLeadConfirm:
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.leads.httpx.Client")
     def test_confirm_success(self, mock_client_cls: MagicMock) -> None:
         upstream_body = {"status": "confirmed"}
         mock_client = MagicMock()
@@ -175,7 +175,7 @@ class TestLeadConfirm:
         assert response.status_code == 200
         assert response.json() == upstream_body
 
-    @patch("app.main.httpx.Client")
+    @patch("app.routers.leads.httpx.Client")
     def test_confirm_upstream_error(self, mock_client_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
