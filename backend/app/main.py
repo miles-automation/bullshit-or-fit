@@ -1,34 +1,31 @@
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr, Field
 
 from app.config import settings
 from app.logging_config import configure_logging
+from app.routers import landing, leads
 
-SPARK_SWARM_API_URL = settings.spark_swarm_api_url.rstrip("/")
-SPARK_SLUG = settings.spark_slug
+logger = logging.getLogger(__name__)
 
-
-class LeadSubmitIn(BaseModel):
-    email: EmailStr
-    name: str = Field(min_length=1, max_length=255)
-    company: str | None = None
-    message: str | None = None
-    source_url: str | None = None
-    website: str | None = None  # honeypot
-
-
-class LeadResendIn(BaseModel):
-    email: EmailStr
-
-
-app = FastAPI(title="Bullshit or Fit", version="0.1.0")
 configure_logging(settings.environment)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    logger.info("App starting", extra={"environment": settings.environment})
+    yield
+    # shutdown
+    logger.info("App shutting down")
+
+
+app = FastAPI(title="Bullshit or Fit", version="0.1.0", lifespan=lifespan)
 
 allow_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -49,6 +46,9 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+# --- Health checks (kept in main.py per convention) ---
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -59,49 +59,13 @@ def api_healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/landing-config")
-def landing_config() -> JSONResponse:
-    url = f"{SPARK_SWARM_API_URL}/public/sparks/{SPARK_SLUG}/landing-config"
-    with httpx.Client(timeout=10) as client:
-        resp = client.get(url)
-    if not resp.is_success:
-        raise HTTPException(
-            status_code=resp.status_code, detail="Failed to fetch landing config"
-        )
-    return JSONResponse(content=resp.json())
+# --- Routers ---
+
+app.include_router(leads.router, prefix="/api")
+app.include_router(landing.router, prefix="/api")
 
 
-@app.post("/api/leads/submit")
-def submit_lead(payload: LeadSubmitIn, request: Request) -> JSONResponse:
-    url = f"{SPARK_SWARM_API_URL}/public/sparks/{SPARK_SLUG}/leads"
-    body = payload.model_dump()
-    body["source_url"] = body.get("source_url") or str(request.url)
-    with httpx.Client(timeout=15) as client:
-        resp = client.post(url, json=body)
-    if not resp.is_success:
-        return JSONResponse(status_code=resp.status_code, content=resp.json())
-    return JSONResponse(content=resp.json())
-
-
-@app.post("/api/leads/resend")
-def resend_confirmation(payload: LeadResendIn) -> JSONResponse:
-    url = f"{SPARK_SWARM_API_URL}/public/sparks/{SPARK_SLUG}/leads/resend-confirmation"
-    with httpx.Client(timeout=15) as client:
-        resp = client.post(url, json=payload.model_dump())
-    if not resp.is_success:
-        return JSONResponse(status_code=resp.status_code, content=resp.json())
-    return JSONResponse(content=resp.json())
-
-
-@app.get("/api/leads/confirm")
-def confirm_lead(token: str = Query(..., min_length=10)) -> JSONResponse:
-    url = f"{SPARK_SWARM_API_URL}/public/leads/confirm"
-    with httpx.Client(timeout=15) as client:
-        resp = client.get(url, params={"token": token})
-    if not resp.is_success:
-        return JSONResponse(status_code=resp.status_code, content=resp.json())
-    return JSONResponse(content=resp.json())
-
+# --- Static / SPA fallback ---
 
 static_dir = Path(__file__).resolve().parent.parent / "static"
 if static_dir.exists():
