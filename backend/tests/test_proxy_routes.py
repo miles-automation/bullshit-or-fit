@@ -22,7 +22,7 @@ def _mock_httpx_response(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/landing-config
+# GET /api/v1/landing-config
 # ---------------------------------------------------------------------------
 
 
@@ -41,7 +41,7 @@ class TestLandingConfig:
         mock_client.get.return_value = _mock_httpx_response(200, upstream_body)
         mock_client_cls.return_value = mock_client
 
-        response = client.get("/api/landing-config")
+        response = client.get("/api/v1/landing-config")
 
         assert response.status_code == 200
         assert response.json() == upstream_body
@@ -58,13 +58,13 @@ class TestLandingConfig:
         )
         mock_client_cls.return_value = mock_client
 
-        response = client.get("/api/landing-config")
+        response = client.get("/api/v1/landing-config")
 
         assert response.status_code == 502
 
 
 # ---------------------------------------------------------------------------
-# POST /api/leads/submit
+# POST /api/v1/leads/submit
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +85,7 @@ class TestLeadSubmit:
         mock_client.post.return_value = _mock_httpx_response(200, upstream_body)
         mock_client_cls.return_value = mock_client
 
-        response = client.post("/api/leads/submit", json=self.VALID_PAYLOAD)
+        response = client.post("/api/v1/leads/submit", json=self.VALID_PAYLOAD)
 
         assert response.status_code == 200
         assert response.json() == upstream_body
@@ -100,24 +100,24 @@ class TestLeadSubmit:
         )
         mock_client_cls.return_value = mock_client
 
-        response = client.post("/api/leads/submit", json=self.VALID_PAYLOAD)
+        response = client.post("/api/v1/leads/submit", json=self.VALID_PAYLOAD)
 
         assert response.status_code == 422
         assert response.json()["detail"] == "Rate limited"
 
     def test_submit_invalid_email(self) -> None:
         payload = {**self.VALID_PAYLOAD, "email": "not-an-email"}
-        response = client.post("/api/leads/submit", json=payload)
+        response = client.post("/api/v1/leads/submit", json=payload)
         assert response.status_code == 422
 
     def test_submit_missing_name(self) -> None:
         payload = {"email": "jane@example.com"}
-        response = client.post("/api/leads/submit", json=payload)
+        response = client.post("/api/v1/leads/submit", json=payload)
         assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# POST /api/leads/resend
+# POST /api/v1/leads/resend
 # ---------------------------------------------------------------------------
 
 
@@ -131,7 +131,9 @@ class TestLeadResend:
         mock_client.post.return_value = _mock_httpx_response(200, upstream_body)
         mock_client_cls.return_value = mock_client
 
-        response = client.post("/api/leads/resend", json={"email": "jane@example.com"})
+        response = client.post(
+            "/api/v1/leads/resend", json={"email": "jane@example.com"}
+        )
 
         assert response.status_code == 200
         assert response.json() == upstream_body
@@ -146,17 +148,19 @@ class TestLeadResend:
         )
         mock_client_cls.return_value = mock_client
 
-        response = client.post("/api/leads/resend", json={"email": "jane@example.com"})
+        response = client.post(
+            "/api/v1/leads/resend", json={"email": "jane@example.com"}
+        )
 
         assert response.status_code == 429
 
     def test_resend_invalid_email(self) -> None:
-        response = client.post("/api/leads/resend", json={"email": "bad"})
+        response = client.post("/api/v1/leads/resend", json={"email": "bad"})
         assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# GET /api/leads/confirm
+# GET /api/v1/leads/confirm
 # ---------------------------------------------------------------------------
 
 
@@ -170,7 +174,9 @@ class TestLeadConfirm:
         mock_client.get.return_value = _mock_httpx_response(200, upstream_body)
         mock_client_cls.return_value = mock_client
 
-        response = client.get("/api/leads/confirm", params={"token": "abc1234567890"})
+        response = client.get(
+            "/api/v1/leads/confirm", params={"token": "abc1234567890"}
+        )
 
         assert response.status_code == 200
         assert response.json() == upstream_body
@@ -185,14 +191,16 @@ class TestLeadConfirm:
         )
         mock_client_cls.return_value = mock_client
 
-        response = client.get("/api/leads/confirm", params={"token": "abc1234567890"})
+        response = client.get(
+            "/api/v1/leads/confirm", params={"token": "abc1234567890"}
+        )
 
         assert response.status_code == 404
 
     def test_confirm_missing_token(self) -> None:
-        response = client.get("/api/leads/confirm")
+        response = client.get("/api/v1/leads/confirm")
         assert response.status_code == 422
 
     def test_confirm_token_too_short(self) -> None:
-        response = client.get("/api/leads/confirm", params={"token": "short"})
+        response = client.get("/api/v1/leads/confirm", params={"token": "short"})
         assert response.status_code == 422

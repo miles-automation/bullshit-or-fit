@@ -13,10 +13,10 @@ This repo hosts the public landing page + lead capture flow for bullshitorfit.co
 
 Use Spark Swarm public leads endpoints via backend proxy routes:
 
-- `GET /api/landing-config` -> Spark Swarm `/api/v1/public/sparks/bullshit-or-fit/landing-config`
-- `POST /api/leads/submit` -> Spark Swarm `/api/v1/public/sparks/bullshit-or-fit/leads`
-- `POST /api/leads/resend` -> Spark Swarm `/api/v1/public/sparks/bullshit-or-fit/leads/resend-confirmation`
-- `GET /api/leads/confirm?token=...` -> Spark Swarm `/api/v1/public/leads/confirm`
+- `GET /api/v1/landing-config` -> Spark Swarm `/api/v1/public/sparks/bullshit-or-fit/landing-config`
+- `POST /api/v1/leads/submit` -> Spark Swarm `/api/v1/public/sparks/bullshit-or-fit/leads`
+- `POST /api/v1/leads/resend` -> Spark Swarm `/api/v1/public/sparks/bullshit-or-fit/leads/resend-confirmation`
+- `GET /api/v1/leads/confirm?token=...` -> Spark Swarm `/api/v1/public/leads/confirm`
 
 ## Commands
 
