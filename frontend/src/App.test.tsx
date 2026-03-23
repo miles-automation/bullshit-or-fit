@@ -14,20 +14,20 @@ interface MockFetchOverrides {
 
 function mockFetch(overrides: MockFetchOverrides = {}) {
   return vi.fn((url: string) => {
-    if (url === '/api/landing-config') {
+    if (url === '/api/v1/landing-config') {
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve(overrides.landingConfig ?? {}),
       })
     }
-    if (url.startsWith('/api/leads/confirm')) {
+    if (url.startsWith('/api/v1/leads/confirm')) {
       const ok = overrides.confirmOk ?? true
       return Promise.resolve({
         ok,
         json: () => (ok ? Promise.resolve({ status: 'confirmed' }) : Promise.reject()),
       })
     }
-    if (url === '/api/leads/submit') {
+    if (url === '/api/v1/leads/submit') {
       const ok = overrides.submitOk ?? true
       const status = ok ? 200 : 422
       return Promise.resolve({
@@ -41,7 +41,7 @@ function mockFetch(overrides: MockFetchOverrides = {}) {
           ),
       })
     }
-    if (url === '/api/leads/resend') {
+    if (url === '/api/v1/leads/resend') {
       const ok = overrides.resendOk ?? true
       return Promise.resolve({
         ok,
@@ -164,10 +164,10 @@ describe('App', () => {
       const user = userEvent.setup()
       let resolveSubmit: (value: unknown) => void
       globalThis.fetch = vi.fn((url: string) => {
-        if (url === '/api/landing-config') {
+        if (url === '/api/v1/landing-config') {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
         }
-        if (url === '/api/leads/submit') {
+        if (url === '/api/v1/leads/submit') {
           return new Promise((resolve) => {
             resolveSubmit = resolve
           })
@@ -211,8 +211,8 @@ describe('App', () => {
     it('shows network error message when fetch throws', async () => {
       const user = userEvent.setup()
       globalThis.fetch = vi.fn((url: string) => {
-        if (url === '/api/landing-config') return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
-        if (url === '/api/leads/submit') return Promise.reject(new Error('Network failure'))
+        if (url === '/api/v1/landing-config') return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+        if (url === '/api/v1/leads/submit') return Promise.reject(new Error('Network failure'))
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
       }) as unknown as typeof globalThis.fetch
 
@@ -320,10 +320,10 @@ describe('App', () => {
       })
       let resolveConfirm: (value: unknown) => void
       globalThis.fetch = vi.fn((url: string) => {
-        if (url === '/api/landing-config') {
+        if (url === '/api/v1/landing-config') {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
         }
-        if (url.startsWith('/api/leads/confirm')) {
+        if (url.startsWith('/api/v1/leads/confirm')) {
           return new Promise((resolve) => {
             resolveConfirm = resolve
           })

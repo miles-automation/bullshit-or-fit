@@ -49,7 +49,7 @@ export interface LeadConfirmResult {
 // ---- Endpoint functions ---------------------------------------------------
 
 export function fetchLandingConfig(): Promise<Partial<LandingConfig>> {
-  return apiFetch<Partial<LandingConfig>>("/api/landing-config");
+  return apiFetch<Partial<LandingConfig>>("/api/v1/landing-config");
 }
 
 export interface LeadSubmitIn {
@@ -62,7 +62,7 @@ export interface LeadSubmitIn {
 }
 
 export function submitLead(payload: LeadSubmitIn): Promise<LeadSubmitResult> {
-  return apiFetch<LeadSubmitResult>("/api/leads/submit", {
+  return apiFetch<LeadSubmitResult>("/api/v1/leads/submit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -76,7 +76,7 @@ export interface LeadResendIn {
 export function resendConfirmation(
   payload: LeadResendIn,
 ): Promise<LeadResendResult> {
-  return apiFetch<LeadResendResult>("/api/leads/resend", {
+  return apiFetch<LeadResendResult>("/api/v1/leads/resend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -85,6 +85,6 @@ export function resendConfirmation(
 
 export function confirmLead(token: string): Promise<LeadConfirmResult> {
   return apiFetch<LeadConfirmResult>(
-    `/api/leads/confirm?token=${encodeURIComponent(token)}`,
+    `/api/v1/leads/confirm?token=${encodeURIComponent(token)}`,
   );
 }

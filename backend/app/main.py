@@ -61,8 +61,8 @@ def api_healthz() -> dict[str, str]:
 
 # --- Routers ---
 
-app.include_router(leads.router, prefix="/api")
-app.include_router(landing.router, prefix="/api")
+app.include_router(leads.router, prefix="/api/v1")
+app.include_router(landing.router, prefix="/api/v1")
 
 
 # --- Static / SPA fallback ---
