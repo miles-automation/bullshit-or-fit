@@ -19,6 +19,7 @@ import time
 from app.config import settings
 from app.db import SessionLocal
 from app.jobtrends import migrate
+from app.jobtrends.extract import extract_all
 from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import ingest_recent
 
@@ -30,6 +31,9 @@ def _run_once(months: int) -> None:
     try:
         with SessionLocal() as session:
             result = ingest_recent(session, client, months)
+            # Rebuild the derived keyword stats from raw so trend stays fresh. It's
+            # cheap and fully reconstructable, so a re-run every tick is fine.
+            extract_all(session)
         logger.info(
             "jobtrends: tick complete — %s posts across %s months",
             sum(result.values()),

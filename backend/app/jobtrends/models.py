@@ -75,3 +75,26 @@ class HnHiringPost(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class KeywordMonthStat(Base):
+    """Derived: per-month keyword presence, fully rebuildable from the raw posts.
+
+    One row per (month, keyword). `posts_matched` = posts that month whose body
+    matched the keyword (presence, counted once per post); `posts_total` = all posts
+    that month (denormalized so trend queries need no join). The extract
+    stage rebuilds this table wholesale, so it always reflects the CURRENT taxonomy
+    over the CURRENT raw corpus — never a source of truth, always reconstructable.
+    """
+
+    __tablename__ = "keyword_month_stats"
+    __table_args__ = {"schema": SCHEMA}
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    keyword: Mapped[str] = mapped_column(Text, primary_key=True)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    posts_matched: Mapped[int] = mapped_column(Integer, nullable=False)
+    posts_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
