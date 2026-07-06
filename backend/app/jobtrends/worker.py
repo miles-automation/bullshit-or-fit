@@ -39,13 +39,21 @@ def _run_once(months: int) -> None:
         logger.exception("jobtrends: ingest tick failed; will retry next interval")
 
 
-def main() -> int:
+def _setup_logging() -> None:
+    # force=True so a second call replaces handlers — alembic's fileConfig (run during
+    # migrate) reconfigures the root logger to WARN, which would otherwise mute every
+    # ingest INFO line and, worse, the error path from the log-shipper.
     logging.basicConfig(
-        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", force=True
     )
+
+
+def main() -> int:
+    _setup_logging()
     logger.info("jobtrends worker starting")
 
     migrate.upgrade_to_head()
+    _setup_logging()  # restore our logging after alembic's fileConfig
 
     # First pass: full backfill window.
     _run_once(settings.jobtrends_backfill_months)

@@ -19,9 +19,18 @@ from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import ingest_recent
 
 
+def _setup_logging() -> None:
+    # force=True: re-assert INFO after alembic's fileConfig (run during migrate) resets
+    # the root logger to WARN, which would otherwise mute the ingest logs.
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", force=True
+    )
+
+
 def _cmd_ingest(months: int, run_migrations: bool) -> int:
     if run_migrations:
         migrate.upgrade_to_head()
+        _setup_logging()  # restore our logging after alembic's fileConfig
     client = HNAlgoliaClient()
     with SessionLocal() as session:
         result = ingest_recent(session, client, months)
@@ -39,9 +48,7 @@ def _cmd_migrate() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
-    )
+    _setup_logging()
     parser = argparse.ArgumentParser(prog="jobtrends")
     sub = parser.add_subparsers(dest="cmd", required=True)
 

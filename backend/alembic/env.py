@@ -12,7 +12,10 @@ config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: the ingest worker runs migrations in-process on
+    # boot, then keeps logging. The fileConfig default (True) would silence the worker's
+    # app loggers after migrate, hiding ingest progress AND errors from the log-shipper.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
