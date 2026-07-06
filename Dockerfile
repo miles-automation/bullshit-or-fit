@@ -13,6 +13,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN uv sync --frozen --no-dev --no-install-project
 ENV PATH="/app/.venv/bin:$PATH"
 COPY backend/app ./app
+# Alembic config for the jobtrends worker (it runs `alembic upgrade head` on boot).
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
 COPY --from=frontend-builder /app/frontend/dist ./static
 EXPOSE 8000
 COPY docker-entrypoint.sh ./
