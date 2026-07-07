@@ -9,6 +9,7 @@ import {
   type MarketMonth,
   type Mover,
   type RemoteResponse,
+  type SkillCompRow,
   type SkillsResponse,
   type TrendResponse,
   type UsaJobsResponse,
@@ -19,6 +20,7 @@ import {
   fetchKeywords,
   fetchMarket,
   fetchRemote,
+  fetchSkillComp,
   fetchSkills,
   fetchSummary,
   fetchTrend,
@@ -67,6 +69,7 @@ export function TrendsDashboard() {
   const [trend, setTrend] = useState<TrendResponse | null>(null);
   const [comp, setComp] = useState<CompMonth[]>([]);
   const [compSources, setCompSources] = useState<CompSource[]>([]);
+  const [skillComp, setSkillComp] = useState<SkillCompRow[]>([]);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
@@ -87,8 +90,9 @@ export function TrendsDashboard() {
       fetchUsaJobs(),
       fetchSkills(),
       fetchCompSources(),
+      fetchSkillComp(),
     ])
-      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -99,6 +103,7 @@ export function TrendsDashboard() {
         setUsajobs(uj);
         setSkills(sk);
         setCompSources(cs.sources);
+        setSkillComp(scp.skills);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -484,6 +489,48 @@ export function TrendsDashboard() {
                   <span className="comp-src-cov muted">
                     {s.coverage_pct}% of {s.n_roles.toLocaleString()}
                   </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {skillComp.length > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>What each skill pays, by channel</h2>
+              <p className="muted">
+                Median advertised pay for roles mentioning each skill, split by source —
+                so you can see the same skill priced across companies, remote, federal and
+                HN. Only skills with enough comped roles in 2+ sources are shown; n = roles.
+              </p>
+            </div>
+          </div>
+          <ul className="co-list skill-comp-list">
+            {skillComp.map((s) => {
+              const cells = ["ats", "remote_board", "usajobs", "hn"]
+                .filter((src) => s.by_source[src])
+                .map((src) => ({ src, ...s.by_source[src] }));
+              const top = Math.max(...cells.map((c) => c.median_usd));
+              return (
+                <li key={s.keyword} className="skill-comp-row">
+                  <span className="co-name">{s.keyword}</span>
+                  <div className="skill-comp-cells">
+                    {cells.map((c) => (
+                      <span
+                        key={c.src}
+                        className={
+                          c.median_usd === top ? "comp-chip comp-chip--top" : "comp-chip"
+                        }
+                      >
+                        <span className="comp-chip-src">{SOURCE_LABEL[c.src] ?? c.src}</span>
+                        <span className="comp-chip-val">{usd(c.median_usd)}</span>
+                        <span className="comp-chip-n">n={c.n_with_comp.toLocaleString()}</span>
+                      </span>
+                    ))}
+                  </div>
                 </li>
               );
             })}

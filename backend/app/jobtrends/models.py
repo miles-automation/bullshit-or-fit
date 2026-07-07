@@ -266,6 +266,28 @@ class KeywordSourceDemand(Base):
     )
 
 
+class SkillCompStat(Base):
+    """Derived: median advertised pay per (source, skill), on the annualized-USD
+    axis. Rebuilt each tick by joining the keyword taxonomy with the comp signal —
+    over ats_jobs (comp columns) and HN post_comp — so a skill's pay is comparable
+    across channels. Only cells with a minimum sample survive (noise floor).
+    """
+
+    __tablename__ = "skill_comp_stat"
+    __table_args__ = {"schema": SCHEMA}
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    keyword: Mapped[str] = mapped_column(Text, primary_key=True)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    n_with_comp: Mapped[int] = mapped_column(Integer, nullable=False)
+    p25_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    median_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    p75_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class CompSourceStat(Base):
     """Derived: pay quartiles per source, on one comparable axis (annualized USD).
 

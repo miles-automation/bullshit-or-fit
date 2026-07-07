@@ -991,6 +991,62 @@ button:disabled {
     display: none;
   }
 }
+.skill-comp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+.skill-comp-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.skill-comp-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.comp-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-deep);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.comp-chip--top {
+  background: var(--panel);
+  border-color: var(--accent);
+}
+.comp-chip-src {
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.comp-chip-val {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.comp-chip-n {
+  font-size: 10.5px;
+  color: var(--ink-muted);
+}
+@media (max-width: 480px) {
+  .skill-comp-row {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .comp-chip-n {
+    display: none;
+  }
+}
 .co-list--labels .co-row {
   grid-template-columns: 150px minmax(0, 1fr) 40px;
 }

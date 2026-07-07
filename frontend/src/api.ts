@@ -200,6 +200,25 @@ export interface CompSourcesResponse {
   sources: CompSource[];
 }
 
+export interface SkillCompCell {
+  n_with_comp: number;
+  p25_usd: number;
+  median_usd: number;
+  p75_usd: number;
+}
+
+export interface SkillCompRow {
+  keyword: string;
+  category: string;
+  total_n: number;
+  by_source: Record<string, SkillCompCell>;
+}
+
+export interface SkillCompResponse {
+  sources: string[];
+  skills: SkillCompRow[];
+}
+
 export interface CohortMonth {
   month: string;
   active: number;
@@ -254,3 +273,6 @@ export const fetchUsaJobs = () =>
 
 export const fetchSkills = () =>
   apiFetch<SkillsResponse>("/api/v1/jobtrends/skills");
+
+export const fetchSkillComp = () =>
+  apiFetch<SkillCompResponse>("/api/v1/jobtrends/skills/comp");

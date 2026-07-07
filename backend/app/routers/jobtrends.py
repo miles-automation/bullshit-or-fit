@@ -17,6 +17,7 @@ from app.jobtrends.comp import comp_sources, comp_trend
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
+from app.jobtrends.skill_comp import skill_comp
 from app.jobtrends.skill_demand import skill_demand
 from app.jobtrends.taxonomy import keyword_category
 from app.jobtrends.trend import keyword_trend
@@ -149,6 +150,25 @@ class SkillsOut(BaseModel):
     total_roles: int
     sources: list[str]
     skills: list[SkillOut]
+
+
+class SkillCompCellOut(BaseModel):
+    n_with_comp: int
+    p25_usd: int
+    median_usd: int
+    p75_usd: int
+
+
+class SkillCompRowOut(BaseModel):
+    keyword: str
+    category: str
+    total_n: int
+    by_source: dict[str, SkillCompCellOut]
+
+
+class SkillCompOut(BaseModel):
+    sources: list[str]
+    skills: list[SkillCompRowOut]
 
 
 class SummaryOut(BaseModel):
@@ -342,6 +362,32 @@ def get_skills(db: Session = Depends(get_db)) -> SkillsOut:
                 roles_matched=s.roles_matched,
                 share=s.share,
                 by_source=s.by_source,
+            )
+            for s in report.skills
+        ],
+    )
+
+
+@router.get("/skills/comp", response_model=SkillCompOut)
+def get_skill_comp(db: Session = Depends(get_db)) -> SkillCompOut:
+    """Median advertised pay per skill, compared across sources."""
+    report = skill_comp(db)
+    return SkillCompOut(
+        sources=report.sources,
+        skills=[
+            SkillCompRowOut(
+                keyword=s.keyword,
+                category=s.category,
+                total_n=s.total_n,
+                by_source={
+                    src: SkillCompCellOut(
+                        n_with_comp=c.n_with_comp,
+                        p25_usd=c.p25_usd,
+                        median_usd=c.median_usd,
+                        p75_usd=c.p75_usd,
+                    )
+                    for src, c in s.by_source.items()
+                },
             )
             for s in report.skills
         ],
