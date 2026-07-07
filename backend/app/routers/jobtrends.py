@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.jobtrends.comp import comp_trend
+from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.taxonomy import keyword_category
 from app.jobtrends.trend import keyword_trend
@@ -76,6 +77,17 @@ class Mover(BaseModel):
     mom_delta_pts: float
 
 
+class MarketMonthOut(BaseModel):
+    month: str
+    hiring_posts: int
+    wants_hired_posts: int
+    seekers_per_100_jobs: float
+
+
+class MarketOut(BaseModel):
+    months: list[MarketMonthOut]
+
+
 class SummaryOut(BaseModel):
     first_month: str | None
     latest_month: str | None
@@ -85,6 +97,7 @@ class SummaryOut(BaseModel):
     recurring_pct: float
     comp_coverage_pct: float
     comp_median_usd: int
+    seekers_per_100_jobs: float  # latest month; 0 if no candidate data
     risers: list[Mover]
     fallers: list[Mover]
 
@@ -163,12 +176,28 @@ def get_churn(db: Session = Depends(get_db)) -> ChurnOut:
     )
 
 
+@router.get("/market", response_model=MarketOut)
+def get_market(db: Session = Depends(get_db)) -> MarketOut:
+    return MarketOut(
+        months=[
+            MarketMonthOut(
+                month=m.month,
+                hiring_posts=m.hiring_posts,
+                wants_hired_posts=m.wants_hired_posts,
+                seekers_per_100_jobs=m.seekers_per_100_jobs,
+            )
+            for m in market_report(db)
+        ]
+    )
+
+
 @router.get("/summary", response_model=SummaryOut)
 def get_summary(db: Session = Depends(get_db)) -> SummaryOut:
     """Headline stats for the dashboard hero: coverage, recurrence, top movers."""
     comp = comp_trend(db)
     churn = churn_report(db)
     trend = keyword_trend(db, None)
+    market = market_report(db)
     cats = keyword_category()
 
     total_posts = sum(m.posts_total for m in comp)
@@ -203,6 +232,7 @@ def get_summary(db: Session = Depends(get_db)) -> SummaryOut:
         recurring_pct=round(churn.recurring_pct, 1),
         comp_coverage_pct=round(comp_coverage, 1),
         comp_median_usd=comp_median,
+        seekers_per_100_jobs=market[-1].seekers_per_100_jobs if market else 0.0,
         risers=risers,
         fallers=fallers,
     )

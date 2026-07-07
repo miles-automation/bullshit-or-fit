@@ -18,7 +18,7 @@ from datetime import date
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from app.jobtrends.models import HnHiringPost, KeywordMonthStat
+from app.jobtrends.models import STREAM_HIRING, HnHiringPost, KeywordMonthStat
 from app.jobtrends.taxonomy import flat_keywords, keyword_category
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,12 @@ def extract_all(session: Session) -> dict[str, int]:
     matched: dict[date, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     totals: dict[date, int] = defaultdict(int)
 
-    # Stream raw posts (month, text) so we never hold the whole corpus in memory.
+    # Stream raw HIRING posts (month, text) so we never hold the whole corpus in
+    # memory. Keyword trends are about job demand, so the candidate stream is excluded.
     for month, raw_text in session.execute(
-        select(HnHiringPost.month, HnHiringPost.raw_text)
+        select(HnHiringPost.month, HnHiringPost.raw_text).where(
+            HnHiringPost.stream == STREAM_HIRING
+        )
     ).yield_per(1000):
         totals[month] += 1
         for kw in match_keywords(raw_text, patterns):
@@ -86,14 +89,17 @@ def extract_all(session: Session) -> dict[str, int]:
 
 
 def rebuild_derived(session: Session) -> None:
-    """Rebuild every derived table from the raw corpus: keyword stats, comp, cohorts.
+    """Rebuild every derived table from the raw corpus: keyword stats, comp,
+    cohorts, and per-stream volume.
 
-    Imported lazily to keep this module's import graph flat (comp/recurrence import
-    only models). All three are cheap and fully reconstructable from raw.
+    Imported lazily to keep this module's import graph flat. All are cheap and
+    fully reconstructable from raw.
     """
     from app.jobtrends.comp import extract_comp
+    from app.jobtrends.market import extract_streams
     from app.jobtrends.recurrence import extract_cohorts
 
     extract_all(session)
     extract_comp(session)
     extract_cohorts(session)
+    extract_streams(session)

@@ -12,13 +12,17 @@ import pytest
 
 from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import (
+    STREAMS,
     ingest_recent,
-    is_hiring_story,
+    matches_stream,
     parse_posts,
     parse_thread,
 )
 
-# July 2026 "Who is hiring?" story, created 2026-07-01T00:00:00Z (created_at_i).
+HIRING = STREAMS[0]  # 'hiring'
+WANTS = STREAMS[1]  # 'wants_hired'
+
+# July 2026 stories, created 2026-07-01T00:00:00Z (created_at_i).
 JULY_STORY = {
     "objectID": "48747976",
     "title": "Ask HN: Who is hiring? (July 2026)",
@@ -36,27 +40,31 @@ HIRED_STORY = {
 }
 
 
-# --- title guard -----------------------------------------------------------
+# --- stream title guards ---------------------------------------------------
 
 
-def test_is_hiring_story_accepts_hiring_thread() -> None:
-    assert is_hiring_story(JULY_STORY) is True
+def test_matches_stream_hiring() -> None:
+    assert matches_stream(JULY_STORY, HIRING) is True
+    assert matches_stream(HIRED_STORY, HIRING) is False
 
 
-def test_is_hiring_story_rejects_wants_to_be_hired() -> None:
-    assert is_hiring_story(HIRED_STORY) is False
+def test_matches_stream_wants_hired() -> None:
+    assert matches_stream(HIRED_STORY, WANTS) is True
+    assert matches_stream(JULY_STORY, WANTS) is False
 
 
-def test_is_hiring_story_handles_missing_title() -> None:
-    assert is_hiring_story({"objectID": "1"}) is False
+def test_matches_stream_handles_missing_title() -> None:
+    assert matches_stream({"objectID": "1"}, HIRING) is False
 
 
 # --- thread parsing --------------------------------------------------------
 
 
-def test_parse_thread_buckets_to_first_of_month() -> None:
-    thread = parse_thread(JULY_STORY)
+def test_parse_thread_buckets_and_tags_stream() -> None:
+    thread = parse_thread(JULY_STORY, "hiring")
     assert thread.hn_id == 48747976
+    assert thread.source == "hn"
+    assert thread.stream == "hiring"
     assert thread.month == date(2026, 7, 1)
     assert thread.num_comments == 341
     assert thread.posted_at == datetime(2026, 7, 1, tzinfo=UTC)
@@ -64,16 +72,16 @@ def test_parse_thread_buckets_to_first_of_month() -> None:
 
 def test_parse_thread_requires_timestamp() -> None:
     with pytest.raises(ValueError):
-        parse_thread({"objectID": "1", "title": "Ask HN: Who is hiring?"})
+        parse_thread({"objectID": "1", "title": "Ask HN: Who is hiring?"}, "hiring")
 
 
 # --- post parsing ----------------------------------------------------------
 
 
 def test_parse_posts_keeps_top_level_with_text_skips_empty() -> None:
-    thread = parse_thread(JULY_STORY)
+    thread = parse_thread(HIRED_STORY, "wants_hired")
     item = {
-        "id": 48747976,
+        "id": 48747999,
         "children": [
             {
                 "id": 1,
@@ -94,14 +102,15 @@ def test_parse_posts_keeps_top_level_with_text_skips_empty() -> None:
     posts = parse_posts(item, thread)
     assert [p.hn_id for p in posts] == [1, 4]
     assert posts[0].raw_text == "Acme | Remote | $150k"
-    assert posts[0].month == date(2026, 7, 1)
-    assert posts[0].thread_id == 48747976
+    assert posts[0].stream == "wants_hired"  # posts inherit the thread's stream
+    assert posts[0].source == "hn"
+    assert posts[0].thread_id == 48747999
     assert posts[0].posted_at == datetime(2026, 7, 1, 0, 1, 40, tzinfo=UTC)
     assert posts[1].posted_at is None  # missing created_at_i tolerated
 
 
 def test_parse_posts_no_children() -> None:
-    thread = parse_thread(JULY_STORY)
+    thread = parse_thread(JULY_STORY, "hiring")
     assert parse_posts({"id": 48747976}, thread) == []
 
 
@@ -112,7 +121,7 @@ def _client_with(handler) -> HNAlgoliaClient:
     return HNAlgoliaClient(transport=httpx.MockTransport(handler))
 
 
-def test_search_hiring_stories_sends_expected_query() -> None:
+def test_search_stream_stories_sends_query() -> None:
     seen: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -120,7 +129,7 @@ def test_search_hiring_stories_sends_expected_query() -> None:
         assert request.url.path.endswith("/search_by_date")
         return httpx.Response(200, json={"hits": [JULY_STORY]})
 
-    hits = _client_with(handler).search_hiring_stories(6)
+    hits = _client_with(handler).search_stream_stories("Ask HN: Who is hiring?", 6)
     assert hits == [JULY_STORY]
     assert seen["tags"] == "story,author_whoishiring"
     assert seen["query"] == "Ask HN: Who is hiring?"
@@ -142,16 +151,13 @@ def test_client_raises_on_http_error() -> None:
         return httpx.Response(500, json={"error": "boom"})
 
     with pytest.raises(httpx.HTTPStatusError):
-        _client_with(handler).search_hiring_stories(1)
+        _client_with(handler).search_stream_stories("q", 1)
 
 
-# --- ingest_recent title filtering (no DB; fake session) -------------------
+# --- ingest_recent across streams (no DB; fake session) --------------------
 
 
 class _FakeSession:
-    """Captures execute/commit without a real DB, so ingest_recent's control
-    flow (title filtering, per-month iteration) is testable in isolation."""
-
     def __init__(self) -> None:
         self.commits = 0
 
@@ -162,22 +168,24 @@ class _FakeSession:
         self.commits += 1
 
 
-def test_ingest_recent_filters_out_inverse_thread() -> None:
+def test_ingest_recent_ingests_each_stream_with_title_guard() -> None:
     children = {
         "children": [
-            {"id": 10, "author": "a", "text": "job", "created_at_i": 1_782_864_100}
+            {"id": 10, "author": "a", "text": "post", "created_at_i": 1_782_864_100}
         ]
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/search_by_date"):
-            # API returns both thread types interleaved; only hiring should ingest.
+            # Both thread types come back interleaved; the per-stream title guard
+            # must pick the right one for each query.
             return httpx.Response(200, json={"hits": [JULY_STORY, HIRED_STORY]})
-        return httpx.Response(200, json={"id": 48747976, **children})
+        return httpx.Response(200, json={"id": 1, **children})
 
     session = _FakeSession()
     result = ingest_recent(session, _client_with(handler), months=5)
 
-    assert list(result.keys()) == ["2026-07-01"]  # inverse thread excluded
-    assert result["2026-07-01"] == 1
-    assert session.commits == 1
+    assert set(result.keys()) == {"hiring/2026-07-01", "wants_hired/2026-07-01"}
+    assert result["hiring/2026-07-01"] == 1
+    assert result["wants_hired/2026-07-01"] == 1
+    assert session.commits == 2  # one per stream-month

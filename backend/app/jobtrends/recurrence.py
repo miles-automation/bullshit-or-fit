@@ -20,7 +20,7 @@ from datetime import date
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from app.jobtrends.models import CohortMonth, HnHiringPost
+from app.jobtrends.models import STREAM_HIRING, CohortMonth, HnHiringPost
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,9 @@ def extract_cohorts(session: Session) -> dict[str, int]:
     pairs = [
         (author, month)
         for author, month in session.execute(
-            select(HnHiringPost.author, HnHiringPost.month).distinct()
+            select(HnHiringPost.author, HnHiringPost.month)
+            .where(HnHiringPost.stream == STREAM_HIRING)
+            .distinct()
         ).all()
         if author
     ]
@@ -125,7 +127,9 @@ def churn_report(session: Session) -> ChurnReport:
     # Recurring = authors appearing in >= 2 distinct months (computed from raw).
     counts: dict[str, int] = {}
     for author, month in session.execute(
-        select(HnHiringPost.author, HnHiringPost.month).distinct()
+        select(HnHiringPost.author, HnHiringPost.month)
+        .where(HnHiringPost.stream == STREAM_HIRING)
+        .distinct()
     ).all():
         if author:
             counts[author] = counts.get(author, 0) + 1

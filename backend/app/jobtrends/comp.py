@@ -24,7 +24,7 @@ from statistics import median
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
-from app.jobtrends.models import HnHiringPost, PostComp
+from app.jobtrends.models import STREAM_HIRING, HnHiringPost, PostComp
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,9 @@ def extract_comp(session: Session) -> dict[str, int]:
     rows: list[dict[str, object]] = []
     total = 0
     for hn_id, month, raw_text in session.execute(
-        select(HnHiringPost.hn_id, HnHiringPost.month, HnHiringPost.raw_text)
+        select(HnHiringPost.hn_id, HnHiringPost.month, HnHiringPost.raw_text).where(
+            HnHiringPost.stream == STREAM_HIRING
+        )
     ).yield_per(1000):
         total += 1
         comp = parse_comp(raw_text)
@@ -193,7 +195,9 @@ def comp_trend(session: Session) -> list[CompMonth]:
     totals: dict[date, int] = {
         month: count
         for month, count in session.execute(
-            select(HnHiringPost.month, func.count()).group_by(HnHiringPost.month)
+            select(HnHiringPost.month, func.count())
+            .where(HnHiringPost.stream == STREAM_HIRING)
+            .group_by(HnHiringPost.month)
         ).all()
     }
     mids: dict[date, list[int]] = defaultdict(list)

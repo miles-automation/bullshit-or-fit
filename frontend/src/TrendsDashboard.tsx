@@ -4,11 +4,13 @@ import {
   type CompMonth,
   type JobtrendsSummary,
   type KeywordOption,
+  type MarketMonth,
   type Mover,
   type TrendResponse,
   fetchChurn,
   fetchComp,
   fetchKeywords,
+  fetchMarket,
   fetchSummary,
   fetchTrend,
 } from "./api";
@@ -48,15 +50,17 @@ export function TrendsDashboard() {
   const [trend, setTrend] = useState<TrendResponse | null>(null);
   const [comp, setComp] = useState<CompMonth[]>([]);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
+  const [market, setMarket] = useState<MarketMonth[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchSummary(), fetchKeywords(), fetchComp(), fetchChurn()])
-      .then(([s, k, c, ch]) => {
+    Promise.all([fetchSummary(), fetchKeywords(), fetchComp(), fetchChurn(), fetchMarket()])
+      .then(([s, k, c, ch, mk]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
         setChurn(ch);
+        setMarket(mk.months);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -163,6 +167,54 @@ export function TrendsDashboard() {
           </p>
         </section>
       )}
+
+      <section className="section-shell">
+        <div className="market-head">
+          <div>
+            <h2>Jobs vs. job-seekers</h2>
+            <p className="muted">
+              Monthly post volume in HN’s “Who is hiring?” (openings) vs. “Who wants to be
+              hired?” (candidates) threads — a rough read on which way the market is leaning.
+            </p>
+          </div>
+          {summary && summary.seekers_per_100_jobs > 0 && (
+            <div className="market-ratio">
+              <span className="market-ratio-num">{Math.round(summary.seekers_per_100_jobs)}</span>
+              <span className="market-ratio-cap">
+                job-seekers per 100 openings <em>(latest)</em>
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="chart-wrap">
+          <LineChart
+            months={market.map((m) => m.month)}
+            lines={[
+              {
+                label: "openings",
+                color: "#245cb8",
+                values: market.map((m) => m.hiring_posts),
+              },
+              {
+                label: "job-seekers",
+                color: "#f05a2a",
+                values: market.map((m) => m.wants_hired_posts),
+              },
+            ]}
+            fmtY={(v) => `${Math.round(v)}`}
+          />
+        </div>
+        <div className="legend">
+          <span className="legend-item">
+            <span className="legend-dot" style={{ background: "#245cb8" }} />
+            openings (jobs)
+          </span>
+          <span className="legend-item">
+            <span className="legend-dot" style={{ background: "#f05a2a" }} />
+            job-seekers
+          </span>
+        </div>
+      </section>
 
       <section className="section-shell">
         <h2>Keyword share of postings</h2>
