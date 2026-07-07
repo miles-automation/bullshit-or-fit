@@ -49,6 +49,13 @@ _NEG = re.compile(
 _SEP = r"(?:\s*(?:[-–—]|to|/)\s*)"  # range separator: - – — "to" /
 _NUM = r"\d{1,3}(?:\.\d)?"
 
+# Retirement-plan codes that collide with the single-k salary regex. Over full
+# ATS/remote job descriptions, "401k" ("401k matching", "generous 401k") is read
+# as a $401k salary — $401,000 clears the plausibility gate, silently inflating
+# comp coverage and quartiles. These are only false positives in bare k-form; the
+# comma-form ("$401,000") is a genuine salary and is left untouched.
+_RETIREMENT_KFORM = {"401", "403", "457"}
+
 # k-form: 150k, $150k–195k, 180-200K
 _RANGE_K = re.compile(rf"([$€£])?\s?({_NUM})\s?[kK]?{_SEP}([$€£])?\s?({_NUM})\s?[kK]")
 _SINGLE_K = re.compile(rf"([$€£])?\s?({_NUM})\s?[kK]\b")
@@ -121,9 +128,12 @@ def parse_comp(raw_text: str) -> CompRange | None:
             )
 
     # 2) single k / comma value.
-    for pat, mul in ((_SINGLE_K, 1000), (_SINGLE_C, 1000)):
+    for pat, mul, is_kform in ((_SINGLE_K, 1000, True), (_SINGLE_C, 1000, False)):
         for m in pat.finditer(text):
             if _negated(text, m.start(), m.end()):
+                continue
+            # "401k"/"403k"/"457k" in bare k-form is a retirement plan, not pay.
+            if is_kform and m.group(2) in _RETIREMENT_KFORM:
                 continue
             val = int(float(m.group(2)) * mul)
             if _plausible_annual(val, val):
