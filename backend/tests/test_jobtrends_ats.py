@@ -217,6 +217,35 @@ def test_parse_ashby_falls_back_to_summary_when_no_structured() -> None:
     assert (j.comp_min, j.comp_max) == (140000, 170000)
 
 
+def test_parse_ashby_tolerates_top_level_comp_shape() -> None:
+    # Live API nests under `compensation`; tolerate a top-level shape defensively.
+    payload = {
+        "jobs": [
+            {
+                "id": "t1",
+                "title": "Staff Engineer",
+                "descriptionPlain": "Lead.",
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 YEAR",
+                                "currencyCode": "USD",
+                                "minValue": 250000,
+                                "maxValue": 320000,
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    j = parse_ashby(ASHBY, payload)[0]
+    assert j.comp_kind == "structured"
+    assert (j.comp_min, j.comp_max) == (250000, 320000)
+
+
 def test_ats_client_dispatches_ashby() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert "posting-api/job-board/ramp" in request.url.path

@@ -250,12 +250,12 @@ def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
     return jobs
 
 
-def _ashby_comp(compensation: dict[str, Any]) -> dict[str, Any] | None:
+def _ashby_comp(tiers: list[Any]) -> dict[str, Any] | None:
     """Ashby structured pay: first USD Salary component, annualized. Else None."""
     from app.jobtrends.comp import annualize_structured
 
-    for tier in compensation.get("compensationTiers") or []:
-        for comp in tier.get("components") or []:
+    for tier in tiers or []:
+        for comp in (tier or {}).get("components") or []:
             if comp.get("compensationType") != "Salary":
                 continue
             if (comp.get("currencyCode") or "USD") != "USD":
@@ -289,10 +289,17 @@ def parse_ashby(company: Company, payload: Any) -> list[ParsedJob]:
             continue
         title = str(j.get("title") or "").strip()
         content = _strip_html(j.get("descriptionPlain") or j.get("descriptionHtml"))
+        # The live API nests comp under `compensation` (verified 2026-07-07), but
+        # tolerate a top-level shape too so a schema tweak can't silently drop pay.
         compensation = j.get("compensation") or {}
-        comp = _ashby_comp(compensation)
+        tiers = compensation.get("compensationTiers") or j.get("compensationTiers")
+        comp = _ashby_comp(tiers or [])
         if comp is None:
-            summary = compensation.get("compensationTierSummary") or ""
+            summary = (
+                compensation.get("compensationTierSummary")
+                or j.get("compensationTierSummary")
+                or ""
+            )
             comp = parsed_comp_fields(title, f"{summary}\n{content}")
         jobs.append(
             ParsedJob(
