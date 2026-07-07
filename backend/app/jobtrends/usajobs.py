@@ -85,11 +85,13 @@ class UsaJobsClient:
         *,
         api_key: str | None = None,
         user_agent: str | None = None,
+        proxy: str | None = None,
         timeout_seconds: float = 30.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.api_key = settings.usajobs_api_key if api_key is None else api_key
         self.user_agent = user_agent or settings.usajobs_user_agent
+        self.proxy = settings.usajobs_proxy if proxy is None else proxy
         self.timeout_seconds = timeout_seconds
         self._transport = transport
 
@@ -104,8 +106,11 @@ class UsaJobsClient:
             "Host": "data.usajobs.gov",
         }
         params = {"Page": page, "ResultsPerPage": results_per_page}
+        # A mock transport (tests) takes precedence; otherwise route via the proxy
+        # when one is configured. httpx forbids passing both.
+        proxy = self.proxy or None if self._transport is None else None
         with httpx.Client(
-            timeout=self.timeout_seconds, transport=self._transport
+            timeout=self.timeout_seconds, transport=self._transport, proxy=proxy
         ) as client:
             resp = client.get(USAJOBS_URL, params=params, headers=headers)
             resp.raise_for_status()

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     usajobs_api_key: str = ""
     usajobs_user_agent: str = ""
     usajobs_max_pages: int = 4  # x500 results/page = bounded recent sample
+    # Optional forward proxy for USAJobs only — data.usajobs.gov is behind Akamai,
+    # which IP-blocks datacenter egress; route via a residential-IP proxy. Empty =
+    # direct (works from dev/residential IPs, blocked from the prod droplet).
+    usajobs_proxy: str = ""
 
 
 settings = Settings()
