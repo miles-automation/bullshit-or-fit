@@ -74,6 +74,12 @@ def test_market_route_empty_ok() -> None:
     assert resp.json() == {"months": []}
 
 
+def test_companies_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/companies")
+    assert resp.status_code == 200
+    assert resp.json() == {"total_open": 0, "companies": 0, "top": []}
+
+
 def test_summary_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/summary")
     assert resp.status_code == 200

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.jobtrends.ats import ats_report
 from app.jobtrends.comp import comp_trend
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
@@ -86,6 +87,18 @@ class MarketMonthOut(BaseModel):
 
 class MarketOut(BaseModel):
     months: list[MarketMonthOut]
+
+
+class CompanyOpeningsOut(BaseModel):
+    company_name: str
+    company_token: str
+    open_roles: int
+
+
+class CompaniesOut(BaseModel):
+    total_open: int
+    companies: int
+    top: list[CompanyOpeningsOut]
 
 
 class SummaryOut(BaseModel):
@@ -188,6 +201,24 @@ def get_market(db: Session = Depends(get_db)) -> MarketOut:
             )
             for m in market_report(db)
         ]
+    )
+
+
+@router.get("/companies", response_model=CompaniesOut)
+def get_companies(db: Session = Depends(get_db)) -> CompaniesOut:
+    """Currently-open roles per company, from the latest ATS snapshot."""
+    report = ats_report(db)
+    return CompaniesOut(
+        total_open=report.total_open,
+        companies=report.companies,
+        top=[
+            CompanyOpeningsOut(
+                company_name=c.company_name,
+                company_token=c.company_token,
+                open_roles=c.open_roles,
+            )
+            for c in report.top
+        ],
     )
 
 

@@ -119,6 +119,18 @@ export interface MarketMonth {
   seekers_per_100_jobs: number;
 }
 
+export interface CompanyOpenings {
+  company_name: string;
+  company_token: string;
+  open_roles: number;
+}
+
+export interface CompaniesResponse {
+  total_open: number;
+  companies: number;
+  top: CompanyOpenings[];
+}
+
 export interface TrendSeries {
   keyword: string;
   category: string;
@@ -180,3 +192,6 @@ export const fetchChurn = () =>
 
 export const fetchMarket = () =>
   apiFetch<{ months: MarketMonth[] }>("/api/v1/jobtrends/market");
+
+export const fetchCompanies = () =>
+  apiFetch<CompaniesResponse>("/api/v1/jobtrends/companies");
