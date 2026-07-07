@@ -143,12 +143,15 @@ def usajobs_snapshot(
                 exc.__class__.__name__,
             )
             return {"configured": 1, "blocked": 1, "open_roles": _open_count(session)}
-        jobs, _total = parse_usajobs(payload)
+        jobs, total = parse_usajobs(payload)
         if not jobs:
             break
         upsert_jobs(session, jobs, run_at)
         session.commit()
         fetched += len(jobs)
+        # SearchResultCountAll is capped at 10k by USAJobs; stop once we've pulled it.
+        if fetched >= total:
+            break
     close_missing(session, run_at, provider=PROVIDER_USAJOBS)
     session.commit()
 

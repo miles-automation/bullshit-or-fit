@@ -34,6 +34,7 @@ from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import ingest_recent
 from app.jobtrends.market import format_market_table, market_report
 from app.jobtrends.recurrence import churn_report, format_churn_table
+from app.jobtrends.skill_demand import format_skill_table, skill_demand
 from app.jobtrends.remote_boards import (
     RemoteClient,
     format_remote_table,
@@ -151,6 +152,12 @@ def _cmd_usajobs() -> int:
     return 0
 
 
+def _cmd_skills() -> int:
+    with SessionLocal() as session:
+        print(format_skill_table(skill_demand(session)))  # noqa: T201
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -186,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("remote", help="remote job market — open roles by category")
     sub.add_parser("usajobs-snapshot", help="snapshot USAJobs (federal; needs API key)")
     sub.add_parser("usajobs", help="federal roles by agency/category")
+    sub.add_parser("skills", help="cross-source skill demand across live openings")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -214,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_usajobs_snapshot()
     if args.cmd == "usajobs":
         return _cmd_usajobs()
+    if args.cmd == "skills":
+        return _cmd_skills()
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

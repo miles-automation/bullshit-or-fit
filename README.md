@@ -65,8 +65,12 @@ rebuildable, so taxonomy/comp logic can evolve without re-fetching.
   `post_comp`), `recurrence.py` (author cohorts/churn → `cohort_month`),
   `market.py` (per-stream volume → `stream_month`). The keyword/comp/churn tables
   are scoped to the `hiring` stream.
+- Cross-source: `skill_demand.py` runs the same keyword taxonomy over the live
+  ATS/remote/federal openings (`ats_jobs` content) → `keyword_source_demand`
+  (share of open roles mentioning each skill, overall + per source).
 - Reports: `trend.py` (keyword share-of-postings + MoM), comp coverage/quartiles,
-  monthly churn, and demand/supply (job-seekers per opening). Exposed via the CLI below.
+  monthly churn, demand/supply (job-seekers per opening), cross-source skill
+  demand. Exposed via the CLI below.
 - Runtime: the `bullshit-or-fit-ingest` compose worker runs `alembic upgrade head`
   on boot, backfills ~18 months, then each day re-ingests the trailing months and
   rebuilds the derived tables. The landing/lead web app stays DB-free.
@@ -88,4 +92,5 @@ uv run python -m app.jobtrends.cli remote-snapshot      # snapshot remote boards
 uv run python -m app.jobtrends.cli remote               # remote roles by category
 uv run python -m app.jobtrends.cli usajobs-snapshot     # snapshot USAJobs (needs key)
 uv run python -m app.jobtrends.cli usajobs              # federal roles by agency
+uv run python -m app.jobtrends.cli skills               # cross-source skill demand
 ```

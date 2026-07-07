@@ -98,8 +98,10 @@ def rebuild_derived(session: Session) -> None:
     from app.jobtrends.comp import extract_comp
     from app.jobtrends.market import extract_streams
     from app.jobtrends.recurrence import extract_cohorts
+    from app.jobtrends.skill_demand import extract_skill_demand
 
     extract_all(session)
     extract_comp(session)
     extract_cohorts(session)
     extract_streams(session)
+    extract_skill_demand(session)

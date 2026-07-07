@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     # User-Agent must be a contact email per USAJobs' terms. ---
     usajobs_api_key: str = ""
     usajobs_user_agent: str = ""
-    usajobs_max_pages: int = 4  # x500 results/page = bounded recent sample
+    # x500 results/page. 20 covers the API's hard 10k paginatable cap (the true
+    # federal total is larger, but USAJobs won't serve past 10k via search).
+    usajobs_max_pages: int = 20
     # Optional forward proxy for USAJobs only — data.usajobs.gov is behind Akamai,
     # which IP-blocks datacenter egress; route via a residential-IP proxy. Empty =
     # direct (works from dev/residential IPs, blocked from the prod droplet).
