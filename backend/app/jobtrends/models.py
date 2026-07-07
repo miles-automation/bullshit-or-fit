@@ -233,3 +233,25 @@ class AtsJob(Base):
     is_open: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true"), index=True
     )
+
+
+class KeywordSourceDemand(Base):
+    """Derived: keyword presence across CURRENTLY-OPEN continuous-board roles,
+    per source. Rebuilt from `ats_jobs` (title + content_text) via the taxonomy.
+
+    This is the cross-source unification: the same skill taxonomy that drives HN's
+    historical keyword trend, applied to the live ATS / remote / federal openings —
+    a snapshot of what's in demand *right now*, comparable across sources.
+    """
+
+    __tablename__ = "keyword_source_demand"
+    __table_args__ = {"schema": SCHEMA}
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    keyword: Mapped[str] = mapped_column(Text, primary_key=True)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    roles_matched: Mapped[int] = mapped_column(Integer, nullable=False)
+    roles_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

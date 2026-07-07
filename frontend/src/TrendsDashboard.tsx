@@ -8,6 +8,7 @@ import {
   type MarketMonth,
   type Mover,
   type RemoteResponse,
+  type SkillsResponse,
   type TrendResponse,
   type UsaJobsResponse,
   fetchChurn,
@@ -16,10 +17,17 @@ import {
   fetchKeywords,
   fetchMarket,
   fetchRemote,
+  fetchSkills,
   fetchSummary,
   fetchTrend,
   fetchUsaJobs,
 } from "./api";
+
+const SOURCE_LABEL: Record<string, string> = {
+  ats: "companies",
+  remote_board: "remote",
+  usajobs: "federal",
+};
 import { BandChart, ChurnChart, LineChart, SERIES_COLORS, type Line } from "./charts";
 
 const DEFAULT_KEYWORDS = ["agents", "claude", "llm", "rust", "remote"];
@@ -60,6 +68,7 @@ export function TrendsDashboard() {
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
   const [remote, setRemote] = useState<RemoteResponse | null>(null);
   const [usajobs, setUsajobs] = useState<UsaJobsResponse | null>(null);
+  const [skills, setSkills] = useState<SkillsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,8 +81,9 @@ export function TrendsDashboard() {
       fetchCompanies(),
       fetchRemote(),
       fetchUsaJobs(),
+      fetchSkills(),
     ])
-      .then(([s, k, c, ch, mk, co, rm, uj]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj, sk]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -82,6 +92,7 @@ export function TrendsDashboard() {
         setCompanies(co);
         setRemote(rm);
         setUsajobs(uj);
+        setSkills(sk);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -386,6 +397,46 @@ export function TrendsDashboard() {
           ))}
         </div>
       </section>
+
+      {skills && skills.total_roles > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>In-demand skills right now</h2>
+              <p className="muted">
+                Share of {skills.total_roles.toLocaleString()} live open roles (companies +
+                remote + federal) mentioning each skill — the same taxonomy as above, applied
+                across every source. The per-source split shows where each skill is concentrated.
+              </p>
+            </div>
+          </div>
+          <ul className="co-list skill-list">
+            {skills.skills.map((s) => {
+              const max = skills.skills[0]?.share || 1;
+              return (
+                <li key={s.keyword} className="skill-row">
+                  <span className="co-name">{s.keyword}</span>
+                  <div className="skill-main">
+                    <span className="co-bar-track">
+                      <span
+                        className="co-bar"
+                        style={{ width: `${Math.max(3, (100 * s.share) / max)}%` }}
+                      />
+                    </span>
+                    <span className="skill-sources">
+                      {Object.entries(s.by_source)
+                        .filter(([, pct]) => pct > 0)
+                        .map(([src, pct]) => `${SOURCE_LABEL[src] ?? src} ${pct}%`)
+                        .join(" · ")}
+                    </span>
+                  </div>
+                  <span className="co-count">{s.share}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="section-shell">
         <h2>Advertised compensation</h2>

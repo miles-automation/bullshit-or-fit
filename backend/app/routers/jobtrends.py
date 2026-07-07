@@ -17,6 +17,7 @@ from app.jobtrends.comp import comp_trend
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
+from app.jobtrends.skill_demand import skill_demand
 from app.jobtrends.taxonomy import keyword_category
 from app.jobtrends.trend import keyword_trend
 from app.jobtrends.usajobs import usajobs_report
@@ -120,6 +121,20 @@ class UsaJobsOut(BaseModel):
     agencies: int
     top_agencies: list[NameCountOut]
     top_categories: list[NameCountOut]
+
+
+class SkillOut(BaseModel):
+    keyword: str
+    category: str
+    roles_matched: int
+    share: float
+    by_source: dict[str, float]
+
+
+class SkillsOut(BaseModel):
+    total_roles: int
+    sources: list[str]
+    skills: list[SkillOut]
 
 
 class SummaryOut(BaseModel):
@@ -275,6 +290,26 @@ def get_usajobs(db: Session = Depends(get_db)) -> UsaJobsOut:
         top_categories=[
             NameCountOut(name=c.name, open_roles=c.open_roles)
             for c in report.top_categories
+        ],
+    )
+
+
+@router.get("/skills", response_model=SkillsOut)
+def get_skills(db: Session = Depends(get_db)) -> SkillsOut:
+    """Cross-source skill demand across live ATS/remote/federal openings."""
+    report = skill_demand(db)
+    return SkillsOut(
+        total_roles=report.total_roles,
+        sources=report.sources,
+        skills=[
+            SkillOut(
+                keyword=s.keyword,
+                category=s.category,
+                roles_matched=s.roles_matched,
+                share=s.share,
+                by_source=s.by_source,
+            )
+            for s in report.skills
         ],
     )
 

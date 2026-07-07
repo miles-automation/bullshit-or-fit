@@ -908,6 +908,28 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.skill-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 12px;
+}
+.skill-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.skill-sources {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skill-list .co-bar-track {
+  height: 11px;
+}
 .co-list--labels .co-row {
   grid-template-columns: 150px minmax(0, 1fr) 40px;
 }

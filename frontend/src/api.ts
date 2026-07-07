@@ -150,6 +150,20 @@ export interface UsaJobsResponse {
   top_categories: NameCount[];
 }
 
+export interface Skill {
+  keyword: string;
+  category: string;
+  roles_matched: number;
+  share: number;
+  by_source: Record<string, number>;
+}
+
+export interface SkillsResponse {
+  total_roles: number;
+  sources: string[];
+  skills: Skill[];
+}
+
 export interface TrendSeries {
   keyword: string;
   category: string;
@@ -220,3 +234,6 @@ export const fetchRemote = () =>
 
 export const fetchUsaJobs = () =>
   apiFetch<UsaJobsResponse>("/api/v1/jobtrends/usajobs");
+
+export const fetchSkills = () =>
+  apiFetch<SkillsResponse>("/api/v1/jobtrends/skills");
