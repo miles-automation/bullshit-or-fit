@@ -71,6 +71,12 @@ def test_churn_route_empty_ok() -> None:
     assert body["distinct_authors"] == 0
 
 
+def test_comp_sources_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/comp/sources")
+    assert resp.status_code == 200
+    assert resp.json() == {"sources": []}
+
+
 def test_market_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/market")
     assert resp.status_code == 200

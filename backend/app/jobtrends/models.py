@@ -25,6 +25,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Text,
@@ -233,6 +234,14 @@ class AtsJob(Base):
     is_open: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true"), index=True
     )
+    # Comp is optional per role. 'structured' = a real pay field (USAJobs
+    # PositionRemuneration); 'parsed' = the free-text heuristic over title+content.
+    # Amounts are annualized in the row's own currency.
+    comp_min: Mapped[int | None] = mapped_column(Integer)
+    comp_max: Mapped[int | None] = mapped_column(Integer)
+    comp_currency: Mapped[str | None] = mapped_column(Text)
+    comp_period: Mapped[str | None] = mapped_column(Text)
+    comp_kind: Mapped[str | None] = mapped_column(Text)
 
 
 class KeywordSourceDemand(Base):
@@ -252,6 +261,30 @@ class KeywordSourceDemand(Base):
     category: Mapped[str] = mapped_column(Text, nullable=False)
     roles_matched: Mapped[int] = mapped_column(Integer, nullable=False)
     roles_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CompSourceStat(Base):
+    """Derived: pay quartiles per source, on one comparable axis (annualized USD).
+
+    Rolls up comp from every source — HN posts (`post_comp`) plus the live
+    continuous-board openings (`ats_jobs` comp columns: companies / remote /
+    federal) — so median pay is finally comparable across channels. Rebuilt each
+    tick; `n_roles` is the denominator that yields `coverage_pct`.
+    """
+
+    __tablename__ = "comp_source_stat"
+    __table_args__ = {"schema": SCHEMA}
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    n_roles: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_with_comp: Mapped[int] = mapped_column(Integer, nullable=False)
+    coverage_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    p25_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    median_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    p75_usd: Mapped[int] = mapped_column(Integer, nullable=False)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

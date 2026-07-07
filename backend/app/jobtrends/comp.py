@@ -20,11 +20,18 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from statistics import median
+from typing import Any
 
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
-from app.jobtrends.models import STREAM_HIRING, HnHiringPost, PostComp
+from app.jobtrends.models import (
+    STREAM_HIRING,
+    AtsJob,
+    CompSourceStat,
+    HnHiringPost,
+    PostComp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,5 +243,200 @@ def format_comp_table(months: list[CompMonth]) -> str:
             f"{m.month:<9}{m.posts_with_comp:>4}/{m.posts_total:<3} "
             f"{f'${m.p25_midpoint // 1000}k':>9} {f'${m.median_midpoint // 1000}k':>9} "
             f"{f'${m.p75_midpoint // 1000}k':>9}"
+        )
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Cross-source comp unification                                               #
+# --------------------------------------------------------------------------- #
+#
+# Comp arrives two ways: HN posts are free-text-parsed into `post_comp` (above);
+# continuous-board roles carry comp on `ats_jobs`. USAJobs ships a *structured*
+# pay field (near-total coverage); Greenhouse/remote roles rarely disclose pay,
+# so we fall back to the same free-text heuristic over title+content. Everything
+# annualizes onto one USD axis so median pay is finally comparable per channel.
+
+# Annualization multipliers for USAJobs pay intervals. The API variously supplies
+# the human string ("Per Year") or a short code ("PA"), so both are keyed here.
+# Anything variable ("Without Compensation", piece/fee) is absent → rejected: it
+# can't be annualized honestly.
+_INTERVAL_MULT: dict[str, int] = {
+    "per year": 1,
+    "pa": 1,
+    "per hour": 2080,
+    "ph": 2080,
+    "per day": 260,
+    "pd": 260,
+    "per week": 52,
+    "pw": 52,
+    "bi-weekly": 26,
+    "per bi-weekly": 26,
+    "bw": 26,
+    "per month": 12,
+    "pm": 12,
+}
+# Structured federal pay legitimately spans low GS grades to senior SES, so the
+# plausibility gate is wider than the precision-first free-text floor.
+_STRUCT_MIN, _STRUCT_MAX = 10_000, 1_000_000
+
+
+def annualize_structured(
+    min_raw: object, max_raw: object, interval: str | None
+) -> tuple[int, int] | None:
+    """(min, max) annualized USD from a USAJobs PositionRemuneration entry, or None.
+
+    Amounts arrive as strings; interval is the human 'Description' ('Per Year',
+    'Per Hour', …). Returns None for missing/variable/implausible pay.
+    """
+    mult = _INTERVAL_MULT.get((interval or "per year").strip().lower())
+    if mult is None:
+        return None
+    try:
+        lo = int(round(float(str(min_raw))) * mult)
+        hi = int(round(float(str(max_raw))) * mult)
+    except (TypeError, ValueError):
+        return None
+    if lo > hi:
+        lo, hi = hi, lo
+    if lo <= 0 or not (_STRUCT_MIN <= lo <= hi <= _STRUCT_MAX):
+        return None
+    return lo, hi
+
+
+def parsed_comp_fields(title: str, content: str) -> dict[str, Any] | None:
+    """Free-text comp for a board role (title+content) as ats_jobs column values,
+    or None. Reuses the precision-first HN parser; kind='parsed'."""
+    comp = parse_comp(f"{title or ''}\n{content or ''}")
+    if comp is None:
+        return None
+    return {
+        "comp_min": comp.min_amount,
+        "comp_max": comp.max_amount,
+        "comp_currency": comp.currency,
+        "comp_period": comp.period,
+        "comp_kind": "parsed",
+    }
+
+
+@dataclass(frozen=True)
+class CompSourceRow:
+    source: str
+    n_roles: int
+    n_with_comp: int
+    coverage_pct: float
+    p25_usd: int
+    median_usd: int
+    p75_usd: int
+
+
+def _quartiles(values: list[int]) -> tuple[int, int, int]:
+    if not values:
+        return 0, 0, 0
+    return _pct(values, 0.25), int(median(values)), _pct(values, 0.75)
+
+
+def extract_comp_sources(session: Session) -> dict[str, int]:
+    """Rebuild `comp_source_stat`: pay quartiles per source on one USD axis.
+
+    Sources: 'hn' (from post_comp) + each continuous-board source ('ats',
+    'remote_board', 'usajobs') from ats_jobs comp columns (USD, currently open).
+    Wholesale replace — fully reconstructable from raw.
+    """
+    stats: dict[str, tuple[int, list[int]]] = {}
+
+    # HN: denominator is all hiring posts; comp midpoints are the USD post_comp rows.
+    hn_total = session.scalar(
+        select(func.count()).where(HnHiringPost.stream == STREAM_HIRING)
+    )
+    hn_mids = [
+        mid
+        for (mid,) in session.execute(
+            select(PostComp.midpoint).where(PostComp.currency == "USD")
+        ).all()
+    ]
+    stats["hn"] = (int(hn_total or 0), hn_mids)
+
+    # Continuous boards: denominator is currently-open roles; comp is the USD
+    # midpoint of the annualized range on each row that has one.
+    for source, total in session.execute(
+        select(AtsJob.source, func.count())
+        .where(AtsJob.is_open.is_(True))
+        .group_by(AtsJob.source)
+    ).all():
+        stats[source] = (int(total), [])
+    for source, lo, hi in session.execute(
+        select(AtsJob.source, AtsJob.comp_min, AtsJob.comp_max).where(
+            AtsJob.is_open.is_(True),
+            AtsJob.comp_currency == "USD",
+            AtsJob.comp_min.is_not(None),
+        )
+    ).all():
+        stats[source][1].append((int(lo) + int(hi)) // 2)
+
+    rows = []
+    for source, (n_roles, mids) in stats.items():
+        p25, med, p75 = _quartiles(mids)
+        rows.append(
+            {
+                "source": source,
+                "n_roles": n_roles,
+                "n_with_comp": len(mids),
+                "coverage_pct": (100.0 * len(mids) / n_roles) if n_roles else 0.0,
+                "p25_usd": p25,
+                "median_usd": med,
+                "p75_usd": p75,
+            }
+        )
+
+    session.execute(delete(CompSourceStat))
+    if rows:
+        session.execute(insert(CompSourceStat), rows)
+    session.commit()
+    logger.info("jobtrends: comp sources rebuilt — %s sources", len(rows))
+    return {"sources": len(rows)}
+
+
+def comp_sources(session: Session) -> list[CompSourceRow]:
+    """Per-source comp stats, richest median first (sources with data on top)."""
+    rows = session.execute(
+        select(
+            CompSourceStat.source,
+            CompSourceStat.n_roles,
+            CompSourceStat.n_with_comp,
+            CompSourceStat.coverage_pct,
+            CompSourceStat.p25_usd,
+            CompSourceStat.median_usd,
+            CompSourceStat.p75_usd,
+        )
+    ).all()
+    out = [
+        CompSourceRow(
+            source=source,
+            n_roles=n_roles,
+            n_with_comp=n_with_comp,
+            coverage_pct=round(coverage, 1),
+            p25_usd=p25,
+            median_usd=med,
+            p75_usd=p75,
+        )
+        for source, n_roles, n_with_comp, coverage, p25, med, p75 in rows
+    ]
+    out.sort(key=lambda r: (r.n_with_comp > 0, r.median_usd), reverse=True)
+    return out
+
+
+def format_comp_sources(rows: list[CompSourceRow]) -> str:
+    if not rows:
+        return "no data — run a snapshot + `extract` first"
+    lines = [
+        f"{'source':<14}{'coverage':>14}{'p25':>9}{'median':>9}{'p75':>9}",
+        "-" * 55,
+    ]
+    for r in rows:
+        cov = f"{r.n_with_comp}/{r.n_roles} ({r.coverage_pct:.0f}%)"
+        lines.append(
+            f"{r.source:<14}{cov:>14}{f'${r.p25_usd // 1000}k':>9}"
+            f"{f'${r.median_usd // 1000}k':>9}{f'${r.p75_usd // 1000}k':>9}"
         )
     return "\n".join(lines)

@@ -45,6 +45,34 @@ def _first(seq: Any, key: str) -> str | None:
     return None
 
 
+def _structured_comp(remuneration: Any) -> dict[str, Any] | None:
+    """USAJobs PositionRemuneration[] -> annualized-USD comp column values, or None.
+
+    Federal postings carry a real pay field, so this is 'structured' (near-total
+    coverage) rather than the free-text heuristic other boards fall back to.
+    """
+    from app.jobtrends.comp import annualize_structured
+
+    if not isinstance(remuneration, list) or not remuneration:
+        return None
+    entry = remuneration[0]
+    annual = annualize_structured(
+        entry.get("MinimumRange"),
+        entry.get("MaximumRange"),
+        entry.get("Description") or entry.get("RateIntervalCode"),
+    )
+    if annual is None:
+        return None
+    lo, hi = annual
+    return {
+        "comp_min": lo,
+        "comp_max": hi,
+        "comp_currency": "USD",
+        "comp_period": "year",
+        "comp_kind": "structured",
+    }
+
+
 def parse_usajobs(payload: dict[str, Any]) -> tuple[list[ParsedJob], int]:
     """USAJobs /api/search JSON -> (ParsedJob[], total_available). Pure."""
     result = payload.get("SearchResult") or {}
@@ -61,6 +89,7 @@ def parse_usajobs(payload: dict[str, Any]) -> tuple[list[ParsedJob], int]:
         if not external_id or not agency:
             continue
         summary = ((d.get("UserArea") or {}).get("Details") or {}).get("JobSummary")
+        comp = _structured_comp(d.get("PositionRemuneration"))
         jobs.append(
             ParsedJob(
                 source=SOURCE_USAJOBS,
@@ -74,6 +103,7 @@ def parse_usajobs(payload: dict[str, Any]) -> tuple[list[ParsedJob], int]:
                 url=d.get("PositionURI"),
                 content_text=_strip_html(summary),
                 posted_at=_parse_dt(d.get("PublicationStartDate")),
+                **(comp or {}),
             )
         )
     return jobs, total

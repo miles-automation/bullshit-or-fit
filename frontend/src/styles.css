@@ -930,6 +930,67 @@ button:disabled {
 .skill-list .co-bar-track {
   height: 11px;
 }
+.comp-src-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.comp-src-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 64px 96px;
+  align-items: center;
+  gap: 12px;
+}
+.comp-src-label {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.comp-src-track {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--bg-deep);
+}
+.comp-src-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--signal-blue) 0%, var(--signal-mint) 100%);
+  opacity: 0.85;
+}
+.comp-src-tick {
+  position: absolute;
+  top: -2px;
+  width: 3px;
+  height: 20px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+.comp-src-median {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink);
+}
+.comp-src-cov {
+  font-size: 11.5px;
+  text-align: right;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .comp-src-row {
+    grid-template-columns: 68px minmax(0, 1fr) 52px;
+  }
+  .comp-src-cov {
+    display: none;
+  }
+}
 .co-list--labels .co-row {
   grid-template-columns: 150px minmax(0, 1fr) 40px;
 }

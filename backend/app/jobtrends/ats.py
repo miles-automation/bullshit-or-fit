@@ -89,6 +89,13 @@ class ParsedJob:
     content_text: str
     posted_at: datetime | None
     source: str = SOURCE_ATS
+    # Optional per-role comp, annualized in `comp_currency`. `comp_kind` is
+    # 'structured' (a real pay field) or 'parsed' (free-text heuristic).
+    comp_min: int | None = None
+    comp_max: int | None = None
+    comp_currency: str | None = None
+    comp_period: str | None = None
+    comp_kind: str | None = None
 
     @property
     def id(self) -> str:
@@ -120,22 +127,27 @@ def _parse_dt(value: Any) -> datetime | None:
 
 def parse_greenhouse(company: Company, payload: dict[str, Any]) -> list[ParsedJob]:
     """Greenhouse `/boards/{token}/jobs?content=true` JSON -> ParsedJob[]. Pure."""
+    from app.jobtrends.comp import parsed_comp_fields
+
     jobs: list[ParsedJob] = []
     for j in payload.get("jobs") or []:
         depts = [d.get("name") for d in (j.get("departments") or []) if d.get("name")]
         loc = (j.get("location") or {}).get("name")
+        title = str(j.get("title") or "").strip()
+        content = _strip_html(j.get("content"))
         jobs.append(
             ParsedJob(
                 provider=PROVIDER_GREENHOUSE,
                 company_token=company.token,
                 company_name=company.name,
                 external_id=str(j.get("id")),
-                title=str(j.get("title") or "").strip(),
+                title=title,
                 location=loc or None,
                 department=depts[0] if depts else None,
                 url=j.get("absolute_url"),
-                content_text=_strip_html(j.get("content")),
+                content_text=content,
                 posted_at=_parse_dt(j.get("updated_at") or j.get("first_published")),
+                **(parsed_comp_fields(title, content) or {}),
             )
         )
     return jobs
@@ -190,6 +202,11 @@ def upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> No
             "first_seen": run_at,
             "last_seen": run_at,
             "is_open": True,
+            "comp_min": j.comp_min,
+            "comp_max": j.comp_max,
+            "comp_currency": j.comp_currency,
+            "comp_period": j.comp_period,
+            "comp_kind": j.comp_kind,
         }
         for j in jobs
     ]
@@ -207,6 +224,11 @@ def upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> No
             "posted_at": stmt.excluded.posted_at,
             "last_seen": stmt.excluded.last_seen,
             "is_open": True,
+            "comp_min": stmt.excluded.comp_min,
+            "comp_max": stmt.excluded.comp_max,
+            "comp_currency": stmt.excluded.comp_currency,
+            "comp_period": stmt.excluded.comp_period,
+            "comp_kind": stmt.excluded.comp_kind,
         },
     )
     session.execute(stmt)

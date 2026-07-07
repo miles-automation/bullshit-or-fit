@@ -186,6 +186,20 @@ export interface CompMonth {
   p75_usd: number;
 }
 
+export interface CompSource {
+  source: string;
+  n_roles: number;
+  n_with_comp: number;
+  coverage_pct: number;
+  p25_usd: number;
+  median_usd: number;
+  p75_usd: number;
+}
+
+export interface CompSourcesResponse {
+  sources: CompSource[];
+}
+
 export interface CohortMonth {
   month: string;
   active: number;
@@ -219,6 +233,9 @@ export const fetchTrend = (keywords: string[]) =>
 
 export const fetchComp = () =>
   apiFetch<{ months: CompMonth[] }>("/api/v1/jobtrends/comp");
+
+export const fetchCompSources = () =>
+  apiFetch<CompSourcesResponse>("/api/v1/jobtrends/comp/sources");
 
 export const fetchChurn = () =>
   apiFetch<ChurnResponse>("/api/v1/jobtrends/churn");
