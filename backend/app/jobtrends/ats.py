@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -30,6 +31,8 @@ from app.jobtrends.models import AtsJob
 logger = logging.getLogger(__name__)
 
 PROVIDER_GREENHOUSE = "greenhouse"
+PROVIDER_LEVER = "lever"
+PROVIDER_ASHBY = "ashby"
 
 # `source` groups continuous-board rows in the shared ats_jobs table: 'ats' =
 # per-company ATS boards (Greenhouse); 'remote_board' = remote aggregators
@@ -48,32 +51,68 @@ class Company:
 
 # Curated seed list — well-known tech companies on public Greenhouse boards
 # (all verified live). Add rows freely; the snapshot picks them up next run.
-SEED_COMPANIES: list[Company] = [
-    Company(n, PROVIDER_GREENHOUSE, t)
-    for n, t in [
-        ("Stripe", "stripe"),
-        ("Databricks", "databricks"),
-        ("Anthropic", "anthropic"),
-        ("Airbnb", "airbnb"),
-        ("Cloudflare", "cloudflare"),
-        ("Brex", "brex"),
-        ("Affirm", "affirm"),
-        ("Pinterest", "pinterest"),
-        ("Reddit", "reddit"),
-        ("Figma", "figma"),
-        ("GitLab", "gitlab"),
-        ("Twilio", "twilio"),
-        ("Lyft", "lyft"),
-        ("Instacart", "instacart"),
-        ("Asana", "asana"),
-        ("Coinbase", "coinbase"),
-        ("Robinhood", "robinhood"),
-        ("Discord", "discord"),
-        ("Gusto", "gusto"),
-        ("Vercel", "vercel"),
-        ("Dropbox", "dropbox"),
+SEED_COMPANIES: list[Company] = (
+    [
+        Company(n, PROVIDER_GREENHOUSE, t)
+        for n, t in [
+            ("Stripe", "stripe"),
+            ("Databricks", "databricks"),
+            ("Anthropic", "anthropic"),
+            ("Airbnb", "airbnb"),
+            ("Cloudflare", "cloudflare"),
+            ("Brex", "brex"),
+            ("Affirm", "affirm"),
+            ("Pinterest", "pinterest"),
+            ("Reddit", "reddit"),
+            ("Figma", "figma"),
+            ("GitLab", "gitlab"),
+            ("Twilio", "twilio"),
+            ("Lyft", "lyft"),
+            ("Instacart", "instacart"),
+            ("Asana", "asana"),
+            ("Coinbase", "coinbase"),
+            ("Robinhood", "robinhood"),
+            ("Discord", "discord"),
+            ("Gusto", "gusto"),
+            ("Vercel", "vercel"),
+            ("Dropbox", "dropbox"),
+        ]
     ]
-]
+    + [
+        # Ashby boards — heavily AI-native, and most carry STRUCTURED compensation
+        # (feeds comp unification). Tokens verified live 2026-07-07.
+        Company(n, PROVIDER_ASHBY, t)
+        for n, t in [
+            ("OpenAI", "openai"),
+            ("Harvey", "harvey"),
+            ("Sierra", "sierra"),
+            ("ElevenLabs", "elevenlabs"),
+            ("Cohere", "cohere"),
+            ("Perplexity", "perplexity"),
+            ("LangChain", "langchain"),
+            ("Cursor", "cursor"),
+            ("Replit", "replit"),
+            ("Notion", "notion"),
+            ("Ramp", "ramp"),
+            ("Vanta", "vanta"),
+            ("Writer", "writer"),
+            ("Suno", "suno"),
+            ("Modal", "modal"),
+            ("Watershed", "watershed"),
+            ("Linear", "linear"),
+            ("PostHog", "posthog"),
+            ("Zapier", "zapier"),
+        ]
+    ]
+    + [
+        # Lever boards — comp is free-text (salaryRange rarely populated).
+        Company(n, PROVIDER_LEVER, t)
+        for n, t in [
+            ("Mistral", "mistral"),
+            ("Spotify", "spotify"),
+        ]
+    ]
+)
 
 
 @dataclass(frozen=True)
@@ -125,7 +164,7 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
-def parse_greenhouse(company: Company, payload: dict[str, Any]) -> list[ParsedJob]:
+def parse_greenhouse(company: Company, payload: Any) -> list[ParsedJob]:
     """Greenhouse `/boards/{token}/jobs?content=true` JSON -> ParsedJob[]. Pure."""
     from app.jobtrends.comp import parsed_comp_fields
 
@@ -153,6 +192,111 @@ def parse_greenhouse(company: Company, payload: dict[str, Any]) -> list[ParsedJo
     return jobs
 
 
+def _epoch_ms_dt(value: Any) -> datetime | None:
+    """Lever `createdAt` is epoch milliseconds."""
+    if not isinstance(value, (int, float)):
+        return None
+    try:
+        return datetime.fromtimestamp(value / 1000, tz=UTC)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
+    """Lever `/v0/postings/{token}?mode=json` JSON array -> ParsedJob[]. Pure.
+
+    Lever's `salaryRange` is rarely populated, so comp is free-text-parsed from
+    the description like Greenhouse.
+    """
+    from app.jobtrends.comp import parsed_comp_fields
+
+    jobs: list[ParsedJob] = []
+    for j in payload:
+        if not isinstance(j, dict) or not j.get("id"):
+            continue
+        cats = j.get("categories") or {}
+        title = str(j.get("text") or "").strip()
+        content = _strip_html(j.get("descriptionPlain") or j.get("descriptionBody"))
+        jobs.append(
+            ParsedJob(
+                provider=PROVIDER_LEVER,
+                company_token=company.token,
+                company_name=company.name,
+                external_id=str(j.get("id")),
+                title=title,
+                location=(cats.get("location") or None),
+                department=(cats.get("team") or cats.get("department") or None),
+                url=j.get("hostedUrl") or j.get("applyUrl"),
+                content_text=content,
+                posted_at=_epoch_ms_dt(j.get("createdAt")),
+                **(parsed_comp_fields(title, content) or {}),
+            )
+        )
+    return jobs
+
+
+def _ashby_comp(compensation: dict[str, Any]) -> dict[str, Any] | None:
+    """Ashby structured pay: first USD Salary component, annualized. Else None."""
+    from app.jobtrends.comp import annualize_structured
+
+    for tier in compensation.get("compensationTiers") or []:
+        for comp in tier.get("components") or []:
+            if comp.get("compensationType") != "Salary":
+                continue
+            if (comp.get("currencyCode") or "USD") != "USD":
+                continue
+            annual = annualize_structured(
+                comp.get("minValue"), comp.get("maxValue"), comp.get("interval")
+            )
+            if annual is not None:
+                lo, hi = annual
+                return {
+                    "comp_min": lo,
+                    "comp_max": hi,
+                    "comp_currency": "USD",
+                    "comp_period": "year",
+                    "comp_kind": "structured",
+                }
+    return None
+
+
+def parse_ashby(company: Company, payload: Any) -> list[ParsedJob]:
+    """Ashby `/posting-api/job-board/{token}` JSON -> ParsedJob[]. Pure.
+
+    Prefers Ashby's structured Salary component; falls back to free-text over the
+    tier summary + description. Only listed roles are kept.
+    """
+    from app.jobtrends.comp import parsed_comp_fields
+
+    jobs: list[ParsedJob] = []
+    for j in payload.get("jobs") or []:
+        if j.get("isListed") is False or not j.get("id"):
+            continue
+        title = str(j.get("title") or "").strip()
+        content = _strip_html(j.get("descriptionPlain") or j.get("descriptionHtml"))
+        compensation = j.get("compensation") or {}
+        comp = _ashby_comp(compensation)
+        if comp is None:
+            summary = compensation.get("compensationTierSummary") or ""
+            comp = parsed_comp_fields(title, f"{summary}\n{content}")
+        jobs.append(
+            ParsedJob(
+                provider=PROVIDER_ASHBY,
+                company_token=company.token,
+                company_name=company.name,
+                external_id=str(j.get("id")),
+                title=title,
+                location=(j.get("location") or None),
+                department=(j.get("department") or j.get("team") or None),
+                url=j.get("jobUrl") or j.get("applyUrl"),
+                content_text=content,
+                posted_at=_parse_dt(j.get("publishedAt") or j.get("publishedDate")),
+                **(comp or {}),
+            )
+        )
+    return jobs
+
+
 class AtsClient:
     def __init__(
         self,
@@ -165,20 +309,34 @@ class AtsClient:
         self._transport = transport
         self._user_agent = user_agent or settings.jobtrends_user_agent
 
+    # (URL template, parser) per provider. The token fills {token}.
+    _PROVIDERS: dict[str, tuple[str, Callable[[Company, Any], list[ParsedJob]]]] = {
+        PROVIDER_GREENHOUSE: (
+            "https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true",
+            parse_greenhouse,
+        ),
+        PROVIDER_LEVER: (
+            "https://api.lever.co/v0/postings/{token}?mode=json",
+            parse_lever,
+        ),
+        PROVIDER_ASHBY: (
+            "https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true",
+            parse_ashby,
+        ),
+    }
+
     def fetch_company(self, company: Company) -> list[ParsedJob]:
-        if company.provider != PROVIDER_GREENHOUSE:
+        entry = self._PROVIDERS.get(company.provider)
+        if entry is None:
             raise ValueError(f"unsupported ATS provider: {company.provider}")
-        url = f"https://boards-api.greenhouse.io/v1/boards/{company.token}/jobs"
+        url_template, parser = entry
+        url = url_template.format(token=company.token)
         with httpx.Client(
             timeout=self.timeout_seconds, transport=self._transport
         ) as client:
-            resp = client.get(
-                url,
-                params={"content": "true"},
-                headers={"User-Agent": self._user_agent},
-            )
+            resp = client.get(url, headers={"User-Agent": self._user_agent})
             resp.raise_for_status()
-            return parse_greenhouse(company, resp.json())
+            return parser(company, resp.json())
 
 
 def upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> None:

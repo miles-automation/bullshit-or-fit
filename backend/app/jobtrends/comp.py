@@ -267,24 +267,29 @@ def format_comp_table(months: list[CompMonth]) -> str:
 # so we fall back to the same free-text heuristic over title+content. Everything
 # annualizes onto one USD axis so median pay is finally comparable per channel.
 
-# Annualization multipliers for USAJobs pay intervals. The API variously supplies
-# the human string ("Per Year") or a short code ("PA"), so both are keyed here.
-# Anything variable ("Without Compensation", piece/fee) is absent → rejected: it
-# can't be annualized honestly.
+# Annualization multipliers for structured pay intervals. Keyed by every form the
+# sources supply: USAJobs human string ("Per Year") or short code ("PA"), plus
+# Ashby's "1 YEAR"/"1 HOUR" style. Anything variable ("Without Compensation",
+# piece/fee) is absent → rejected: it can't be annualized honestly.
 _INTERVAL_MULT: dict[str, int] = {
     "per year": 1,
     "pa": 1,
+    "1 year": 1,
     "per hour": 2080,
     "ph": 2080,
+    "1 hour": 2080,
     "per day": 260,
     "pd": 260,
+    "1 day": 260,
     "per week": 52,
     "pw": 52,
+    "1 week": 52,
     "bi-weekly": 26,
     "per bi-weekly": 26,
     "bw": 26,
     "per month": 12,
     "pm": 12,
+    "1 month": 12,
 }
 # Structured federal pay legitimately spans low GS grades to senior SES, so the
 # plausibility gate is wider than the precision-first free-text floor.
