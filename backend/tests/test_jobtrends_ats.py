@@ -10,13 +10,17 @@ import httpx
 import pytest
 
 from app.jobtrends.ats import (
+    PROVIDER_ASHBY,
     PROVIDER_GREENHOUSE,
+    PROVIDER_LEVER,
     AtsClient,
     AtsReport,
     Company,
     CompanyOpenings,
     format_ats_table,
+    parse_ashby,
     parse_greenhouse,
+    parse_lever,
 )
 
 ACME = Company("Acme", PROVIDER_GREENHOUSE, "acme")
@@ -84,7 +88,192 @@ def test_ats_client_fetches_and_parses() -> None:
 
 def test_ats_client_rejects_unknown_provider() -> None:
     with pytest.raises(ValueError):
-        AtsClient().fetch_company(Company("X", "lever", "x"))
+        AtsClient().fetch_company(Company("X", "workday", "x"))
+
+
+# ---- Lever -----------------------------------------------------------------
+
+LEVER = Company("Mistral", PROVIDER_LEVER, "mistral")
+LEVER_PAYLOAD = [
+    {
+        "id": "abc-1",
+        "text": "Senior ML Engineer",
+        "categories": {"location": "Paris", "team": "Research"},
+        "hostedUrl": "https://jobs.lever.co/mistral/abc-1",
+        "descriptionPlain": "Build models. Comp $180k-220k. Python, Rust.",
+        "createdAt": 1753687796431,
+    },
+    {"text": "no id — skipped"},
+]
+
+
+def test_parse_lever_shape_and_freetext_comp() -> None:
+    jobs = parse_lever(LEVER, LEVER_PAYLOAD)
+    assert len(jobs) == 1  # the id-less row is skipped
+    j = jobs[0]
+    assert j.provider == PROVIDER_LEVER
+    assert j.id == "lever:mistral:abc-1"
+    assert j.title == "Senior ML Engineer"
+    assert j.location == "Paris"
+    assert j.department == "Research"
+    assert j.posted_at is not None and j.posted_at.year == 2025
+    # comp comes from the free-text parser (Lever salaryRange is rare)
+    assert j.comp_kind == "parsed"
+    assert (j.comp_min, j.comp_max) == (180000, 220000)
+
+
+def test_parse_lever_prefers_structured_salary_range() -> None:
+    # When a board populates salaryRange, use it (structured) over free text.
+    payload = [
+        {
+            "id": "s1",
+            "text": "Data Scientist",
+            "categories": {"location": "NYC"},
+            "descriptionPlain": "No pay mentioned here.",
+            "salaryRange": {
+                "min": 150000,
+                "max": 180000,
+                "currency": "USD",
+                "interval": "per-year-salary",
+            },
+        }
+    ]
+    j = parse_lever(LEVER, payload)[0]
+    assert j.comp_kind == "structured"
+    assert (j.comp_min, j.comp_max) == (150000, 180000)
+
+
+def test_parse_lever_reads_lists_and_additional() -> None:
+    # Skills + pay commonly live in lists[]/additionalPlain, not descriptionPlain.
+    payload = [
+        {
+            "id": "x1",
+            "text": "Backend Engineer",
+            "categories": {"location": "Remote"},
+            "descriptionPlain": "Join our team building great things.",
+            "lists": [
+                {
+                    "text": "Requirements",
+                    "content": "<li>Deep Kubernetes experience</li>",
+                }
+            ],
+            "additionalPlain": "The salary range is $190,000-$230,000 plus equity.",
+        }
+    ]
+    j = parse_lever(LEVER, payload)[0]
+    assert "Kubernetes" in j.content_text  # list content included
+    assert "salary range" in j.content_text  # additional included
+    # comp parsed from additionalPlain, which descriptionPlain alone would miss
+    assert (j.comp_min, j.comp_max) == (190000, 230000)
+
+
+# ---- Ashby -----------------------------------------------------------------
+
+ASHBY = Company("Ramp", PROVIDER_ASHBY, "ramp")
+ASHBY_PAYLOAD = {
+    "jobs": [
+        {
+            "id": "j1",
+            "title": "Backend Engineer",
+            "location": "New York",
+            "department": "Engineering",
+            "jobUrl": "https://jobs.ashbyhq.com/ramp/j1",
+            "descriptionPlain": "Ship product.",
+            "publishedAt": "2026-07-01T00:00:00.000+00:00",
+            "isListed": True,
+            "compensation": {
+                "compensationTierSummary": "$168K – $231K",
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 YEAR",
+                                "currencyCode": "USD",
+                                "minValue": 168000,
+                                "maxValue": 231000,
+                            },
+                            {"compensationType": "EquityCashValue", "minValue": None},
+                        ]
+                    }
+                ],
+            },
+        },
+        {
+            "id": "j2",
+            "title": "Unlisted role",
+            "isListed": False,
+        },
+    ]
+}
+
+
+def test_parse_ashby_structured_comp() -> None:
+    jobs = parse_ashby(ASHBY, ASHBY_PAYLOAD)
+    assert len(jobs) == 1  # unlisted role skipped
+    j = jobs[0]
+    assert j.provider == PROVIDER_ASHBY
+    assert j.id == "ashby:ramp:j1"
+    assert j.location == "New York"
+    assert j.department == "Engineering"
+    # structured salary component -> annualized USD
+    assert j.comp_kind == "structured"
+    assert j.comp_currency == "USD"
+    assert (j.comp_min, j.comp_max) == (168000, 231000)
+
+
+def test_parse_ashby_falls_back_to_summary_when_no_structured() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": "k1",
+                "title": "Designer",
+                "descriptionPlain": "Make things pretty.",
+                "compensation": {"compensationTierSummary": "$140k - $170k"},
+            }
+        ]
+    }
+    j = parse_ashby(ASHBY, payload)[0]
+    assert j.comp_kind == "parsed"
+    assert (j.comp_min, j.comp_max) == (140000, 170000)
+
+
+def test_parse_ashby_tolerates_top_level_comp_shape() -> None:
+    # Live API nests under `compensation`; tolerate a top-level shape defensively.
+    payload = {
+        "jobs": [
+            {
+                "id": "t1",
+                "title": "Staff Engineer",
+                "descriptionPlain": "Lead.",
+                "compensationTiers": [
+                    {
+                        "components": [
+                            {
+                                "compensationType": "Salary",
+                                "interval": "1 YEAR",
+                                "currencyCode": "USD",
+                                "minValue": 250000,
+                                "maxValue": 320000,
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    j = parse_ashby(ASHBY, payload)[0]
+    assert j.comp_kind == "structured"
+    assert (j.comp_min, j.comp_max) == (250000, 320000)
+
+
+def test_ats_client_dispatches_ashby() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "posting-api/job-board/ramp" in request.url.path
+        return httpx.Response(200, json=ASHBY_PAYLOAD)
+
+    jobs = AtsClient(transport=httpx.MockTransport(handler)).fetch_company(ASHBY)
+    assert [j.external_id for j in jobs] == ["j1"]
 
 
 def test_format_ats_table() -> None:
