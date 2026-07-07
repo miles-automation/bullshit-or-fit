@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 
 PROVIDER_GREENHOUSE = "greenhouse"
 
+# `source` groups continuous-board rows in the shared ats_jobs table: 'ats' =
+# per-company ATS boards (Greenhouse); 'remote_board' = remote aggregators
+# (Remotive/RemoteOK). Reports filter on it so each signal stays clean.
+SOURCE_ATS = "ats"
+SOURCE_REMOTE = "remote_board"
+
 
 @dataclass(frozen=True)
 class Company:
@@ -81,6 +87,7 @@ class ParsedJob:
     url: str | None
     content_text: str
     posted_at: datetime | None
+    source: str = SOURCE_ATS
 
     @property
     def id(self) -> str:
@@ -154,12 +161,14 @@ class AtsClient:
             return parse_greenhouse(company, resp.json())
 
 
-def _upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> None:
+def upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> None:
+    """Upsert postings for this snapshot run. Shared by ATS + remote boards."""
     if not jobs:
         return
     rows = [
         {
             "id": j.id,
+            "source": j.source,
             "provider": j.provider,
             "company_token": j.company_token,
             "company_name": j.company_name,
@@ -180,7 +189,7 @@ def _upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> N
     stmt = stmt.on_conflict_do_update(
         index_elements=[AtsJob.id],
         set_={
-            # first_seen intentionally NOT updated — it's the role's debut.
+            # first_seen + source intentionally NOT updated — the role's debut/origin.
             "company_name": stmt.excluded.company_name,
             "title": stmt.excluded.title,
             "location": stmt.excluded.location,
@@ -193,6 +202,25 @@ def _upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> N
         },
     )
     session.execute(stmt)
+
+
+def close_missing(
+    session: Session,
+    run_at: datetime,
+    *,
+    provider: str,
+    company_token: str | None = None,
+) -> None:
+    """Flip roles not seen in this run to closed, within a provider (optionally a
+    single company). Everything fetched this run has last_seen == run_at."""
+    conditions = [
+        AtsJob.provider == provider,
+        AtsJob.last_seen < run_at,
+        AtsJob.is_open.is_(True),
+    ]
+    if company_token is not None:
+        conditions.append(AtsJob.company_token == company_token)
+    session.execute(update(AtsJob).where(*conditions).values(is_open=False))
 
 
 def ats_snapshot(
@@ -211,24 +239,19 @@ def ats_snapshot(
         except Exception:  # noqa: BLE001 — one board must not sink the whole snapshot
             logger.exception("jobtrends: ATS fetch failed for %s", company.token)
             continue
-        _upsert_jobs(session, jobs, run_at)
+        upsert_jobs(session, jobs, run_at)
         # Roles this company no longer lists → closed.
-        session.execute(
-            update(AtsJob)
-            .where(
-                AtsJob.company_token == company.token,
-                AtsJob.provider == company.provider,
-                AtsJob.last_seen < run_at,
-                AtsJob.is_open.is_(True),
-            )
-            .values(is_open=False)
+        close_missing(
+            session, run_at, provider=company.provider, company_token=company.token
         )
         session.commit()
         ok += 1
         logger.info("jobtrends: ATS %s — %s open roles", company.token, len(jobs))
 
     open_roles = session.scalar(
-        select(func.count()).select_from(AtsJob).where(AtsJob.is_open.is_(True))
+        select(func.count())
+        .select_from(AtsJob)
+        .where(AtsJob.is_open.is_(True), AtsJob.source == SOURCE_ATS)
     )
     logger.info(
         "jobtrends: ATS snapshot complete — %s companies, %s open roles", ok, open_roles
@@ -258,7 +281,7 @@ def ats_report(session: Session, limit: int = 20) -> AtsReport:
             AtsJob.company_token,
             func.count(),
         )
-        .where(AtsJob.is_open.is_(True))
+        .where(AtsJob.is_open.is_(True), AtsJob.source == SOURCE_ATS)
         .group_by(AtsJob.company_name, AtsJob.company_token)
         .order_by(func.count().desc())
     ).all()

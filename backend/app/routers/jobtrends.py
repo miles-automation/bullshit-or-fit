@@ -16,6 +16,7 @@ from app.jobtrends.ats import ats_report
 from app.jobtrends.comp import comp_trend
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
+from app.jobtrends.remote_boards import remote_report
 from app.jobtrends.taxonomy import keyword_category
 from app.jobtrends.trend import keyword_trend
 
@@ -99,6 +100,18 @@ class CompaniesOut(BaseModel):
     total_open: int
     companies: int
     top: list[CompanyOpeningsOut]
+
+
+class NameCountOut(BaseModel):
+    name: str
+    open_roles: int
+
+
+class RemoteOut(BaseModel):
+    total_open: int
+    companies: int
+    top_companies: list[NameCountOut]
+    top_categories: list[NameCountOut]
 
 
 class SummaryOut(BaseModel):
@@ -218,6 +231,24 @@ def get_companies(db: Session = Depends(get_db)) -> CompaniesOut:
                 open_roles=c.open_roles,
             )
             for c in report.top
+        ],
+    )
+
+
+@router.get("/remote", response_model=RemoteOut)
+def get_remote(db: Session = Depends(get_db)) -> RemoteOut:
+    """Remote job market — open roles by category/company (Remotive + RemoteOK)."""
+    report = remote_report(db)
+    return RemoteOut(
+        total_open=report.total_open,
+        companies=report.companies,
+        top_companies=[
+            NameCountOut(name=c.name, open_roles=c.open_roles)
+            for c in report.top_companies
+        ],
+        top_categories=[
+            NameCountOut(name=c.name, open_roles=c.open_roles)
+            for c in report.top_categories
         ],
     )
 

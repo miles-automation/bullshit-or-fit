@@ -27,6 +27,9 @@ class _EmptySession:
     def execute(self, *_a, **_k) -> _EmptyResult:  # noqa: ANN002, ANN003
         return _EmptyResult()
 
+    def scalar(self, *_a, **_k):  # noqa: ANN002, ANN003, ANN201
+        return None
+
 
 def _override_db():
     yield _EmptySession()
@@ -78,6 +81,17 @@ def test_companies_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/companies")
     assert resp.status_code == 200
     assert resp.json() == {"total_open": 0, "companies": 0, "top": []}
+
+
+def test_remote_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/remote")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "total_open": 0,
+        "companies": 0,
+        "top_companies": [],
+        "top_categories": [],
+    }
 
 
 def test_summary_route_empty_ok() -> None:

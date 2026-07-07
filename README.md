@@ -52,10 +52,12 @@ rebuildable, so taxonomy/comp logic can evolve without re-fetching.
   keyed on HN ids → re-running a month upserts, never duplicates). Each row is
   tagged with `source` (`hn`) + `stream` — the multi-source spine. Streams today:
   `hiring` (jobs/demand) and `wants_hired` (candidates/supply).
-- Sources: HN (`ingest.py`) + **ATS company boards** (`ats.py` → `ats_jobs`,
-  Greenhouse today). ATS is a continuous-board source — it snapshots currently-open
-  roles per company and tracks `first_seen`/`last_seen`/`is_open` (open→closed
-  history accrues from deploy). Curated company list in `ats.py::SEED_COMPANIES`.
+- Sources: HN (`ingest.py`) + **continuous boards** in the shared `ats_jobs` table
+  (snapshot + `first_seen`/`last_seen`/`is_open`, so open→closed history accrues
+  from deploy): **ATS company boards** (`ats.py`, Greenhouse, `source='ats'`,
+  curated `SEED_COMPANIES`) and **remote aggregators** (`remote_boards.py`,
+  Remotive + RemoteOK, `source='remote_board'`). Reports filter on `source` so each
+  signal stays clean.
 - Analysis (derived, rebuilt from raw): `taxonomy.py` + `extract.py` (keyword
   presence → `keyword_month_stats`), `comp.py` (precision-first salary parsing →
   `post_comp`), `recurrence.py` (author cohorts/churn → `cohort_month`),
@@ -80,4 +82,6 @@ uv run python -m app.jobtrends.cli churn                # author recurrence + ch
 uv run python -m app.jobtrends.cli market               # demand/supply per month
 uv run python -m app.jobtrends.cli ats-snapshot         # snapshot ATS company boards
 uv run python -m app.jobtrends.cli ats                  # open roles per company
+uv run python -m app.jobtrends.cli remote-snapshot      # snapshot remote boards
+uv run python -m app.jobtrends.cli remote               # remote roles by category
 ```
