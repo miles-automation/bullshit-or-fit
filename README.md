@@ -42,21 +42,31 @@ docker build --platform linux/amd64 -t ghcr.io/miles-automation/bullshit-or-fit:
 ## jobtrends data engine
 
 The hiring-market data engine behind Bullshit or Fit. It ingests Hacker News
-"Who is hiring?" monthly threads (HN Algolia API) and stores **raw** post text in
-Postgres — its own `jobtrends` schema inside the `bullshit_or_fit` database. This
-round is ingestion only; analysis reconstructs everything from the raw rows later.
+"Who is hiring?" monthly threads (HN Algolia API), stores **raw** post text in
+Postgres (its own `jobtrends` schema inside the `bullshit_or_fit` database), and
+derives analysis tables from it. Raw is immutable; every derived table is fully
+rebuildable, so taxonomy/comp logic can evolve without re-fetching.
 
-- `backend/app/jobtrends/` — `hn_algolia.py` (API client), `ingest.py` (parse +
-  idempotent upsert), `worker.py` (looping ingest container), `cli.py`, `models.py`.
-- Tables: `jobtrends.hn_hiring_threads` (one row/monthly thread) and
-  `jobtrends.hn_hiring_posts` (one row/job post, `raw_text` verbatim). Idempotent
-  on the HN ids — re-running a month upserts, never duplicates.
+- Ingest: `hn_algolia.py` (API client), `ingest.py` (parse + idempotent upsert).
+  Raw tables `jobtrends.hn_hiring_threads` / `hn_hiring_posts` (`raw_text` verbatim,
+  keyed on HN ids → re-running a month upserts, never duplicates).
+- Analysis (derived, rebuilt from raw): `taxonomy.py` + `extract.py` (keyword
+  presence → `keyword_month_stats`), `comp.py` (precision-first salary parsing →
+  `post_comp`), `recurrence.py` (author cohorts/churn → `cohort_month`).
+- Reports: `trend.py` (keyword share-of-postings + MoM), comp coverage/quartiles,
+  monthly churn. Exposed via the CLI below.
 - Runtime: the `bullshit-or-fit-ingest` compose worker runs `alembic upgrade head`
-  on boot, backfills ~18 months, then re-ingests the trailing months daily. The
-  landing/lead web app stays DB-free.
+  on boot, backfills ~18 months, then each day re-ingests the trailing months and
+  rebuilds the derived tables. The landing/lead web app stays DB-free.
 
 ```bash
 make migrate                      # alembic upgrade head
 make jobtrends-ingest             # one-shot backfill (idempotent); MONTHS=6 to override
 make new-migration MSG="..."      # scaffold a sequential migration
+
+# analysis (backend/, after ingest):
+uv run python -m app.jobtrends.cli extract              # rebuild all derived tables
+uv run python -m app.jobtrends.cli trend python rust mcp # keyword share-of-postings
+uv run python -m app.jobtrends.cli comp                 # salary coverage + quartiles
+uv run python -m app.jobtrends.cli churn                # author recurrence + churn
 ```

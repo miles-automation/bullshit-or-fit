@@ -98,3 +98,45 @@ class KeywordMonthStat(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class PostComp(Base):
+    """Derived: parsed salary for posts that state one. Rebuilt from raw.
+
+    One row per post with a parseable comp figure (precision-first — noise like
+    funding/stars is rejected). Amounts are annualized currency units; hourly rows
+    are ×2080 with period='hour'.
+    """
+
+    __tablename__ = "post_comp"
+    __table_args__ = {"schema": SCHEMA}
+
+    hn_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(f"{SCHEMA}.hn_hiring_posts.hn_id", ondelete="CASCADE"),
+        primary_key=True,
+        autoincrement=False,
+    )
+    month: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    currency: Mapped[str] = mapped_column(Text, nullable=False)
+    min_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    midpoint: Mapped[int] = mapped_column(Integer, nullable=False)
+    period: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_match: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class CohortMonth(Base):
+    """Derived: per-month author cohort stats (recurrence/churn). Rebuilt from raw."""
+
+    __tablename__ = "cohort_month"
+    __table_args__ = {"schema": SCHEMA}
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    active_authors: Mapped[int] = mapped_column(Integer, nullable=False)
+    new_authors: Mapped[int] = mapped_column(Integer, nullable=False)
+    returning_authors: Mapped[int] = mapped_column(Integer, nullable=False)
+    churned_prev: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

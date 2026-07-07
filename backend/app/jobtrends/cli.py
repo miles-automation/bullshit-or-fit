@@ -1,12 +1,14 @@
 """jobtrends CLI — ingestion + analysis + migration helpers.
 
     python -m app.jobtrends.cli ingest --months 18   # backfill N recent months (raw)
-    python -m app.jobtrends.cli extract              # rebuild keyword stats from raw
-    python -m app.jobtrends.cli trend python rust mcp # print share-of-postings trend
+    python -m app.jobtrends.cli extract              # rebuild ALL derived tables
+    python -m app.jobtrends.cli trend python rust mcp # keyword share-of-postings
+    python -m app.jobtrends.cli comp                 # salary coverage + quartiles
+    python -m app.jobtrends.cli churn                # author recurrence + churn
     python -m app.jobtrends.cli migrate              # alembic upgrade head
 
-Ingest is idempotent and extract/trend read only stored data, so re-running is
-always safe. Change taxonomy.py and re-run `extract` + `trend` without re-fetching.
+Ingest is idempotent and the reports read only stored data, so re-running is
+always safe. Change taxonomy.py/comp.py and re-run `extract` without re-fetching.
 """
 
 from __future__ import annotations
@@ -18,9 +20,11 @@ import sys
 from app.config import settings
 from app.db import SessionLocal
 from app.jobtrends import migrate
-from app.jobtrends.extract import extract_all
+from app.jobtrends.comp import comp_trend, format_comp_table
+from app.jobtrends.extract import rebuild_derived
 from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import ingest_recent
+from app.jobtrends.recurrence import churn_report, format_churn_table
 from app.jobtrends.trend import format_trend_table, keyword_trend
 
 
@@ -48,11 +52,8 @@ def _cmd_ingest(months: int, run_migrations: bool) -> int:
 
 def _cmd_extract() -> int:
     with SessionLocal() as session:
-        summary = extract_all(session)
-    print(  # noqa: T201
-        f"extracted {summary['keywords']} keywords across {summary['months']} months "
-        f"({summary['rows']} stat rows)"
-    )
+        rebuild_derived(session)
+    print("rebuilt derived tables (keyword stats, comp, cohorts)")  # noqa: T201
     return 0
 
 
@@ -60,6 +61,18 @@ def _cmd_trend(keywords: list[str]) -> int:
     with SessionLocal() as session:
         report = keyword_trend(session, keywords or None)
     print(format_trend_table(report))  # noqa: T201
+    return 0
+
+
+def _cmd_comp() -> int:
+    with SessionLocal() as session:
+        print(format_comp_table(comp_trend(session)))  # noqa: T201
+    return 0
+
+
+def _cmd_churn() -> int:
+    with SessionLocal() as session:
+        print(format_churn_table(churn_report(session)))  # noqa: T201
     return 0
 
 
@@ -84,10 +97,13 @@ def main(argv: list[str] | None = None) -> int:
         help="skip `alembic upgrade head` before ingesting",
     )
 
-    sub.add_parser("extract", help="rebuild keyword stats from the raw corpus")
+    sub.add_parser("extract", help="rebuild all derived tables from the raw corpus")
 
-    p_trend = sub.add_parser("trend", help="print share-of-postings trend")
+    p_trend = sub.add_parser("trend", help="keyword share-of-postings trend")
     p_trend.add_argument("keywords", nargs="*", help="keywords to show (default: all)")
+
+    sub.add_parser("comp", help="salary coverage + midpoint quartiles by month")
+    sub.add_parser("churn", help="author recurrence + monthly churn")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -98,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_extract()
     if args.cmd == "trend":
         return _cmd_trend(args.keywords)
+    if args.cmd == "comp":
+        return _cmd_comp()
+    if args.cmd == "churn":
+        return _cmd_churn()
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2
