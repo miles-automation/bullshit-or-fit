@@ -81,6 +81,26 @@ def test_comp_picks_salary_over_nearby_funding() -> None:
     assert (c.min_amount, c.max_amount) == (150000, 180000)
 
 
+def test_comp_rejects_401k_benefits() -> None:
+    # Over full job descriptions the single-k regex reads "401k" as a $401k salary.
+    assert parse_comp("Backend Engineer. Benefits: 401k matching, health, PTO.") is None
+    assert parse_comp("Generous 401k, unlimited PTO, remote-first.") is None
+
+
+def test_comp_keeps_401k_comma_salary() -> None:
+    # Comma-form $401,000 is a genuine (if lofty) salary — must NOT be dropped.
+    c = parse_comp("Principal Engineer | $401,000 base | Remote")
+    assert c is not None
+    assert c.min_amount == 401000
+
+
+def test_comp_real_salary_survives_alongside_401k() -> None:
+    # A real range wins even when 401k benefits are mentioned in the same post.
+    c = parse_comp("Senior Eng | $180k-220k + 401k matching | Remote")
+    assert c is not None
+    assert (c.min_amount, c.max_amount) == (180000, 220000)
+
+
 # --- cohort / churn math ---------------------------------------------------
 
 
