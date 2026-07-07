@@ -105,11 +105,14 @@ SEED_COMPANIES: list[Company] = (
         ]
     ]
     + [
-        # Lever boards — comp is free-text (salaryRange rarely populated).
+        # Lever boards — MatchGroup/Palantir carry structured salaryRange; others
+        # fall back to free-text. Tokens verified live 2026-07-07.
         Company(n, PROVIDER_LEVER, t)
         for n, t in [
             ("Mistral", "mistral"),
             ("Spotify", "spotify"),
+            ("Match Group", "matchgroup"),
+            ("Palantir", "palantir"),
         ]
     ]
 )
@@ -217,11 +220,39 @@ def _lever_text(j: dict[str, Any]) -> str:
     return _strip_html(" ".join(p for p in pieces if p))
 
 
+def _lever_comp(salary_range: Any) -> dict[str, Any] | None:
+    """Lever structured `salaryRange` -> annualized-USD comp values, or None.
+
+    Populated by only some boards (e.g. MatchGroup) but authoritative when present,
+    so it's preferred over the free-text heuristic. Shape:
+    `{min, max, currency, interval: "per-year-salary"}`.
+    """
+    if not isinstance(salary_range, dict):
+        return None
+    if (salary_range.get("currency") or "USD") != "USD":
+        return None
+    from app.jobtrends.comp import annualize_structured
+
+    annual = annualize_structured(
+        salary_range.get("min"), salary_range.get("max"), salary_range.get("interval")
+    )
+    if annual is None:
+        return None
+    lo, hi = annual
+    return {
+        "comp_min": lo,
+        "comp_max": hi,
+        "comp_currency": "USD",
+        "comp_period": "year",
+        "comp_kind": "structured",
+    }
+
+
 def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
     """Lever `/v0/postings/{token}?mode=json` JSON array -> ParsedJob[]. Pure.
 
-    Lever's `salaryRange` is rarely populated, so comp is free-text-parsed from
-    the full posting text (opening + lists + additional) like Greenhouse.
+    Prefers the structured `salaryRange` when a board populates it; otherwise
+    free-text-parses the full posting text (opening + lists + additional).
     """
     from app.jobtrends.comp import parsed_comp_fields
 
@@ -232,6 +263,7 @@ def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
         cats = j.get("categories") or {}
         title = str(j.get("text") or "").strip()
         content = _lever_text(j)
+        comp = _lever_comp(j.get("salaryRange")) or parsed_comp_fields(title, content)
         jobs.append(
             ParsedJob(
                 provider=PROVIDER_LEVER,
@@ -244,7 +276,7 @@ def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
                 url=j.get("hostedUrl") or j.get("applyUrl"),
                 content_text=content,
                 posted_at=_epoch_ms_dt(j.get("createdAt")),
-                **(parsed_comp_fields(title, content) or {}),
+                **(comp or {}),
             )
         )
     return jobs

@@ -290,6 +290,12 @@ _INTERVAL_MULT: dict[str, int] = {
     "per month": 12,
     "pm": 12,
     "1 month": 12,
+    # Lever salaryRange.interval
+    "per-year-salary": 1,
+    "per-hour-salary": 2080,
+    "per-day-salary": 260,
+    "per-week-salary": 52,
+    "per-month-salary": 12,
 }
 # Structured federal pay legitimately spans low GS grades to senior SES, so the
 # plausibility gate is wider than the precision-first free-text floor.

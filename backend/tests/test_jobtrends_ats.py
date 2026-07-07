@@ -122,6 +122,27 @@ def test_parse_lever_shape_and_freetext_comp() -> None:
     assert (j.comp_min, j.comp_max) == (180000, 220000)
 
 
+def test_parse_lever_prefers_structured_salary_range() -> None:
+    # When a board populates salaryRange, use it (structured) over free text.
+    payload = [
+        {
+            "id": "s1",
+            "text": "Data Scientist",
+            "categories": {"location": "NYC"},
+            "descriptionPlain": "No pay mentioned here.",
+            "salaryRange": {
+                "min": 150000,
+                "max": 180000,
+                "currency": "USD",
+                "interval": "per-year-salary",
+            },
+        }
+    ]
+    j = parse_lever(LEVER, payload)[0]
+    assert j.comp_kind == "structured"
+    assert (j.comp_min, j.comp_max) == (150000, 180000)
+
+
 def test_parse_lever_reads_lists_and_additional() -> None:
     # Skills + pay commonly live in lists[]/additionalPlain, not descriptionPlain.
     payload = [
