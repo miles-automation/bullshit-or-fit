@@ -94,6 +94,17 @@ def test_remote_route_empty_ok() -> None:
     }
 
 
+def test_usajobs_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/usajobs")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "total_open": 0,
+        "agencies": 0,
+        "top_agencies": [],
+        "top_categories": [],
+    }
+
+
 def test_summary_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/summary")
     assert resp.status_code == 200

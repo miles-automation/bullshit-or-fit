@@ -36,6 +36,7 @@ PROVIDER_GREENHOUSE = "greenhouse"
 # (Remotive/RemoteOK). Reports filter on it so each signal stays clean.
 SOURCE_ATS = "ats"
 SOURCE_REMOTE = "remote_board"
+SOURCE_USAJOBS = "usajobs"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,13 @@ def _strip_html(raw: str | None) -> str:
         return ""
     text = re.sub(r"<[^>]+>", " ", html.unescape(raw))
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _slug_hint(name: str) -> str:
+    """Stable lowercase token for a company/agency name (used in the row id)."""
+    return (
+        re.sub(r"[^a-z0-9]+", "-", (name or "unknown").lower()).strip("-") or "unknown"
+    )
 
 
 def _parse_dt(value: Any) -> datetime | None:

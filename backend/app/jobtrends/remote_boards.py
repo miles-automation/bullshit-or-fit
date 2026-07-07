@@ -14,7 +14,6 @@ injectable transport for tests.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -28,6 +27,7 @@ from app.jobtrends.ats import (
     SOURCE_REMOTE,
     ParsedJob,
     _parse_dt,
+    _slug_hint,
     _strip_html,
     close_missing,
     upsert_jobs,
@@ -42,12 +42,6 @@ REMOTIVE_URL = "https://remotive.com/api/remote-jobs"
 REMOTEOK_URL = "https://remoteok.com/api"
 
 
-def _slug(name: str) -> str:
-    return (
-        re.sub(r"[^a-z0-9]+", "-", (name or "unknown").lower()).strip("-") or "unknown"
-    )
-
-
 def parse_remotive(payload: dict[str, Any]) -> list[ParsedJob]:
     jobs: list[ParsedJob] = []
     for j in payload.get("jobs") or []:
@@ -56,7 +50,7 @@ def parse_remotive(payload: dict[str, Any]) -> list[ParsedJob]:
             ParsedJob(
                 source=SOURCE_REMOTE,
                 provider=PROVIDER_REMOTIVE,
-                company_token=_slug(company),
+                company_token=_slug_hint(company),
                 company_name=company or "Unknown",
                 external_id=str(j.get("id")),
                 title=str(j.get("title") or "").strip(),
@@ -81,7 +75,7 @@ def parse_remoteok(payload: list[Any]) -> list[ParsedJob]:
             ParsedJob(
                 source=SOURCE_REMOTE,
                 provider=PROVIDER_REMOTEOK,
-                company_token=_slug(company),
+                company_token=_slug_hint(company),
                 company_name=company or "Unknown",
                 external_id=str(j.get("id")),
                 title=str(j.get("position") or "").strip(),

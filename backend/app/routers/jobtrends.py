@@ -19,6 +19,7 @@ from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
 from app.jobtrends.taxonomy import keyword_category
 from app.jobtrends.trend import keyword_trend
+from app.jobtrends.usajobs import usajobs_report
 
 router = APIRouter(prefix="/jobtrends", tags=["jobtrends"])
 
@@ -111,6 +112,13 @@ class RemoteOut(BaseModel):
     total_open: int
     companies: int
     top_companies: list[NameCountOut]
+    top_categories: list[NameCountOut]
+
+
+class UsaJobsOut(BaseModel):
+    total_open: int
+    agencies: int
+    top_agencies: list[NameCountOut]
     top_categories: list[NameCountOut]
 
 
@@ -245,6 +253,24 @@ def get_remote(db: Session = Depends(get_db)) -> RemoteOut:
         top_companies=[
             NameCountOut(name=c.name, open_roles=c.open_roles)
             for c in report.top_companies
+        ],
+        top_categories=[
+            NameCountOut(name=c.name, open_roles=c.open_roles)
+            for c in report.top_categories
+        ],
+    )
+
+
+@router.get("/usajobs", response_model=UsaJobsOut)
+def get_usajobs(db: Session = Depends(get_db)) -> UsaJobsOut:
+    """Federal job market — open roles by agency/category (USAJobs)."""
+    report = usajobs_report(db)
+    return UsaJobsOut(
+        total_open=report.total_open,
+        agencies=report.agencies,
+        top_agencies=[
+            NameCountOut(name=a.name, open_roles=a.open_roles)
+            for a in report.top_agencies
         ],
         top_categories=[
             NameCountOut(name=c.name, open_roles=c.open_roles)

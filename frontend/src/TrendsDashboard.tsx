@@ -9,6 +9,7 @@ import {
   type Mover,
   type RemoteResponse,
   type TrendResponse,
+  type UsaJobsResponse,
   fetchChurn,
   fetchCompanies,
   fetchComp,
@@ -17,6 +18,7 @@ import {
   fetchRemote,
   fetchSummary,
   fetchTrend,
+  fetchUsaJobs,
 } from "./api";
 import { BandChart, ChurnChart, LineChart, SERIES_COLORS, type Line } from "./charts";
 
@@ -57,6 +59,7 @@ export function TrendsDashboard() {
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
   const [remote, setRemote] = useState<RemoteResponse | null>(null);
+  const [usajobs, setUsajobs] = useState<UsaJobsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -68,8 +71,9 @@ export function TrendsDashboard() {
       fetchMarket(),
       fetchCompanies(),
       fetchRemote(),
+      fetchUsaJobs(),
     ])
-      .then(([s, k, c, ch, mk, co, rm]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -77,6 +81,7 @@ export function TrendsDashboard() {
         setMarket(mk.months);
         setCompanies(co);
         setRemote(rm);
+        setUsajobs(uj);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -300,6 +305,46 @@ export function TrendsDashboard() {
                         />
                       </span>
                       <span className="co-count">{c.open_roles}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
+      {usajobs && usajobs.total_open > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>Federal hiring</h2>
+              <p className="muted">
+                Open roles across {usajobs.agencies} US federal agencies, from the official
+                USAJobs API — the public-sector side of the market.
+              </p>
+            </div>
+            <div className="market-ratio">
+              <span className="market-ratio-num">{usajobs.total_open.toLocaleString()}</span>
+              <span className="market-ratio-cap">federal roles tracked</span>
+            </div>
+          </div>
+          {usajobs.top_agencies.length > 0 && (
+            <>
+              <p className="muted co-caption">Top agencies</p>
+              <ul className="co-list co-list--labels">
+                {usajobs.top_agencies.map((a) => {
+                  const max = usajobs.top_agencies[0]?.open_roles || 1;
+                  return (
+                    <li key={a.name} className="co-row">
+                      <span className="co-name">{a.name}</span>
+                      <span className="co-bar-track">
+                        <span
+                          className="co-bar"
+                          style={{ width: `${Math.max(4, (100 * a.open_roles) / max)}%` }}
+                        />
+                      </span>
+                      <span className="co-count">{a.open_roles}</span>
                     </li>
                   );
                 })}
