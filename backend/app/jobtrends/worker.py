@@ -52,6 +52,15 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: ATS snapshot failed; will retry next interval")
 
+    # Remote-board snapshot — likewise isolated.
+    try:
+        from app.jobtrends.remote_boards import RemoteClient, remote_snapshot
+
+        with SessionLocal() as session:
+            remote_snapshot(session, RemoteClient())
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: remote snapshot failed; will retry next interval")
+
 
 def _setup_logging() -> None:
     # force=True so a second call replaces handlers — alembic's fileConfig (run during

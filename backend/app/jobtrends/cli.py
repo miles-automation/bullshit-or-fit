@@ -34,6 +34,12 @@ from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import ingest_recent
 from app.jobtrends.market import format_market_table, market_report
 from app.jobtrends.recurrence import churn_report, format_churn_table
+from app.jobtrends.remote_boards import (
+    RemoteClient,
+    format_remote_table,
+    remote_report,
+    remote_snapshot,
+)
 from app.jobtrends.trend import format_trend_table, keyword_trend
 
 
@@ -107,6 +113,22 @@ def _cmd_ats() -> int:
     return 0
 
 
+def _cmd_remote_snapshot() -> int:
+    with SessionLocal() as session:
+        summary = remote_snapshot(session, RemoteClient())
+    print(  # noqa: T201
+        f"snapshot: {summary['open_roles']} open remote roles from "
+        f"{summary['providers_ok']} boards"
+    )
+    return 0
+
+
+def _cmd_remote() -> int:
+    with SessionLocal() as session:
+        print(format_remote_table(remote_report(session)))  # noqa: T201
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -138,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("market", help="demand/supply — job-seekers per opening")
     sub.add_parser("ats-snapshot", help="snapshot ATS company boards (Greenhouse)")
     sub.add_parser("ats", help="open roles per company (from the latest snapshot)")
+    sub.add_parser("remote-snapshot", help="snapshot remote boards (Remotive/RemoteOK)")
+    sub.add_parser("remote", help="remote job market — open roles by category")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -158,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_ats_snapshot()
     if args.cmd == "ats":
         return _cmd_ats()
+    if args.cmd == "remote-snapshot":
+        return _cmd_remote_snapshot()
+    if args.cmd == "remote":
+        return _cmd_remote()
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

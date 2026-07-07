@@ -7,12 +7,14 @@ import {
   type KeywordOption,
   type MarketMonth,
   type Mover,
+  type RemoteResponse,
   type TrendResponse,
   fetchChurn,
   fetchCompanies,
   fetchComp,
   fetchKeywords,
   fetchMarket,
+  fetchRemote,
   fetchSummary,
   fetchTrend,
 } from "./api";
@@ -54,6 +56,7 @@ export function TrendsDashboard() {
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
+  const [remote, setRemote] = useState<RemoteResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,14 +67,16 @@ export function TrendsDashboard() {
       fetchChurn(),
       fetchMarket(),
       fetchCompanies(),
+      fetchRemote(),
     ])
-      .then(([s, k, c, ch, mk, co]) => {
+      .then(([s, k, c, ch, mk, co, rm]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
         setChurn(ch);
         setMarket(mk.months);
         setCompanies(co);
+        setRemote(rm);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -261,6 +266,46 @@ export function TrendsDashboard() {
               );
             })}
           </ul>
+        </section>
+      )}
+
+      {remote && remote.total_open > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>Remote job market</h2>
+              <p className="muted">
+                A live sample of open remote roles from Remotive + RemoteOK ({remote.companies}{" "}
+                companies). Coverage grows as the daily snapshot history builds.
+              </p>
+            </div>
+            <div className="market-ratio">
+              <span className="market-ratio-num">{remote.total_open.toLocaleString()}</span>
+              <span className="market-ratio-cap">remote roles tracked</span>
+            </div>
+          </div>
+          {remote.top_categories.length > 0 && (
+            <>
+              <p className="muted co-caption">Openings by function</p>
+              <ul className="co-list co-list--labels">
+                {remote.top_categories.map((c) => {
+                  const max = remote.top_categories[0]?.open_roles || 1;
+                  return (
+                    <li key={c.name} className="co-row">
+                      <span className="co-name">{c.name}</span>
+                      <span className="co-bar-track">
+                        <span
+                          className="co-bar"
+                          style={{ width: `${Math.max(4, (100 * c.open_roles) / max)}%` }}
+                        />
+                      </span>
+                      <span className="co-count">{c.open_roles}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
         </section>
       )}
 
