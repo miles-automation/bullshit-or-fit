@@ -200,6 +200,22 @@ export interface CompSourcesResponse {
   sources: CompSource[];
 }
 
+export interface MetroCount {
+  metro: string;
+  n_roles: number;
+}
+
+export interface GeoSource {
+  source: string;
+  total: number;
+  remote_pct: number;
+  top_metros: MetroCount[];
+}
+
+export interface GeoResponse {
+  sources: GeoSource[];
+}
+
 export interface SkillCompCell {
   n_with_comp: number;
   p25_usd: number;
@@ -276,3 +292,6 @@ export const fetchSkills = () =>
 
 export const fetchSkillComp = () =>
   apiFetch<SkillCompResponse>("/api/v1/jobtrends/skills/comp");
+
+export const fetchLocations = () =>
+  apiFetch<GeoResponse>("/api/v1/jobtrends/locations");

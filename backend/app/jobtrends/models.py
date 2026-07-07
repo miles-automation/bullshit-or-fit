@@ -266,6 +266,27 @@ class KeywordSourceDemand(Base):
     )
 
 
+class LocationStat(Base):
+    """Derived: role counts per (source, metro bucket) with a remote tally.
+
+    Rebuilt each tick from the currently-open `ats_jobs`: the messy free-text
+    location is normalized to a metro bucket (or 'Remote'/'Other'), and each role
+    is also flagged remote if its location mentions it. Powers "where the jobs
+    are" + remote-share on the dashboard.
+    """
+
+    __tablename__ = "location_stat"
+    __table_args__ = {"schema": SCHEMA}
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    bucket: Mapped[str] = mapped_column(Text, primary_key=True)
+    n_roles: Mapped[int] = mapped_column(Integer, nullable=False)
+    remote_roles: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class SkillCompStat(Base):
     """Derived: median advertised pay per (source, skill), on the annualized-USD
     axis. Rebuilt each tick by joining the keyword taxonomy with the comp signal —

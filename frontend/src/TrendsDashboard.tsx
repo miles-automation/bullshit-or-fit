@@ -4,6 +4,7 @@ import {
   type CompMonth,
   type CompSource,
   type CompaniesResponse,
+  type GeoSource,
   type JobtrendsSummary,
   type KeywordOption,
   type MarketMonth,
@@ -19,6 +20,7 @@ import {
   fetchComp,
   fetchKeywords,
   fetchMarket,
+  fetchLocations,
   fetchRemote,
   fetchSkillComp,
   fetchSkills,
@@ -70,6 +72,7 @@ export function TrendsDashboard() {
   const [comp, setComp] = useState<CompMonth[]>([]);
   const [compSources, setCompSources] = useState<CompSource[]>([]);
   const [skillComp, setSkillComp] = useState<SkillCompRow[]>([]);
+  const [geo, setGeo] = useState<GeoSource[]>([]);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
@@ -91,8 +94,9 @@ export function TrendsDashboard() {
       fetchSkills(),
       fetchCompSources(),
       fetchSkillComp(),
+      fetchLocations(),
     ])
-      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp, lc]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -104,6 +108,7 @@ export function TrendsDashboard() {
         setSkills(sk);
         setCompSources(cs.sources);
         setSkillComp(scp.skills);
+        setGeo(lc.sources);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -384,6 +389,54 @@ export function TrendsDashboard() {
           )}
         </section>
       )}
+
+      {(() => {
+        const companies = geo.find((g) => g.source === "ats");
+        if (!companies || companies.top_metros.length === 0) return null;
+        const max = companies.top_metros[0]?.n_roles || 1;
+        // remote_board is definitionally 100% remote — a tautology — so the
+        // informative contrast is companies vs federal.
+        const order = ["ats", "usajobs"];
+        const remoteChips = order
+          .map((src) => geo.find((g) => g.source === src))
+          .filter((g): g is GeoSource => Boolean(g));
+        return (
+          <section className="section-shell">
+            <div className="market-head">
+              <div>
+                <h2>Where the jobs are</h2>
+                <p className="muted">
+                  Top metros among {companies.total.toLocaleString()} open company roles
+                  (from the location on each posting), plus how much of each channel is
+                  remote.
+                </p>
+              </div>
+            </div>
+            <div className="remote-share-row">
+              {remoteChips.map((g) => (
+                <span key={g.source} className="remote-share-chip">
+                  <span className="remote-share-pct">{g.remote_pct}%</span>
+                  <span className="remote-share-src">remote · {SOURCE_LABEL[g.source] ?? g.source}</span>
+                </span>
+              ))}
+            </div>
+            <ul className="co-list metro-list">
+              {companies.top_metros.map((m) => (
+                <li key={m.metro} className="co-row metro-row">
+                  <span className="co-name">{m.metro}</span>
+                  <span className="co-bar-track">
+                    <span
+                      className="co-bar"
+                      style={{ width: `${Math.max(3, (100 * m.n_roles) / max)}%` }}
+                    />
+                  </span>
+                  <span className="co-count">{m.n_roles.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
 
       <section className="section-shell">
         <h2>Keyword share of postings</h2>

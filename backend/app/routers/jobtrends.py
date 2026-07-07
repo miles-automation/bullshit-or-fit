@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.jobtrends.ats import ats_report
 from app.jobtrends.comp import comp_sources, comp_trend
+from app.jobtrends.geo import geo_report
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
@@ -150,6 +151,22 @@ class SkillsOut(BaseModel):
     total_roles: int
     sources: list[str]
     skills: list[SkillOut]
+
+
+class MetroCountOut(BaseModel):
+    metro: str
+    n_roles: int
+
+
+class GeoSourceOut(BaseModel):
+    source: str
+    total: int
+    remote_pct: float
+    top_metros: list[MetroCountOut]
+
+
+class GeoOut(BaseModel):
+    sources: list[GeoSourceOut]
 
 
 class SkillCompCellOut(BaseModel):
@@ -365,6 +382,25 @@ def get_skills(db: Session = Depends(get_db)) -> SkillsOut:
             )
             for s in report.skills
         ],
+    )
+
+
+@router.get("/locations", response_model=GeoOut)
+def get_locations(db: Session = Depends(get_db)) -> GeoOut:
+    """Where the open roles are: top metros + remote share, per source."""
+    return GeoOut(
+        sources=[
+            GeoSourceOut(
+                source=g.source,
+                total=g.total,
+                remote_pct=g.remote_pct,
+                top_metros=[
+                    MetroCountOut(metro=m.metro, n_roles=m.n_roles)
+                    for m in g.top_metros
+                ],
+            )
+            for g in geo_report(db)
+        ]
     )
 
 
