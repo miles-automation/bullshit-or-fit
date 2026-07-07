@@ -41,6 +41,12 @@ from app.jobtrends.remote_boards import (
     remote_snapshot,
 )
 from app.jobtrends.trend import format_trend_table, keyword_trend
+from app.jobtrends.usajobs import (
+    UsaJobsClient,
+    format_usajobs_table,
+    usajobs_report,
+    usajobs_snapshot,
+)
 
 
 def _setup_logging() -> None:
@@ -129,6 +135,22 @@ def _cmd_remote() -> int:
     return 0
 
 
+def _cmd_usajobs_snapshot() -> int:
+    with SessionLocal() as session:
+        summary = usajobs_snapshot(session, UsaJobsClient())
+    if not summary["configured"]:
+        print("skipped: set USAJOBS_API_KEY + USAJOBS_USER_AGENT (email)")  # noqa: T201
+        return 0
+    print(f"snapshot: {summary['open_roles']} federal roles tracked")  # noqa: T201
+    return 0
+
+
+def _cmd_usajobs() -> int:
+    with SessionLocal() as session:
+        print(format_usajobs_table(usajobs_report(session)))  # noqa: T201
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -162,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ats", help="open roles per company (from the latest snapshot)")
     sub.add_parser("remote-snapshot", help="snapshot remote boards (Remotive/RemoteOK)")
     sub.add_parser("remote", help="remote job market — open roles by category")
+    sub.add_parser("usajobs-snapshot", help="snapshot USAJobs (federal; needs API key)")
+    sub.add_parser("usajobs", help="federal roles by agency/category")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -186,6 +210,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_remote_snapshot()
     if args.cmd == "remote":
         return _cmd_remote()
+    if args.cmd == "usajobs-snapshot":
+        return _cmd_usajobs_snapshot()
+    if args.cmd == "usajobs":
+        return _cmd_usajobs()
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

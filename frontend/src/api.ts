@@ -143,6 +143,13 @@ export interface RemoteResponse {
   top_categories: NameCount[];
 }
 
+export interface UsaJobsResponse {
+  total_open: number;
+  agencies: number;
+  top_agencies: NameCount[];
+  top_categories: NameCount[];
+}
+
 export interface TrendSeries {
   keyword: string;
   category: string;
@@ -210,3 +217,6 @@ export const fetchCompanies = () =>
 
 export const fetchRemote = () =>
   apiFetch<RemoteResponse>("/api/v1/jobtrends/remote");
+
+export const fetchUsaJobs = () =>
+  apiFetch<UsaJobsResponse>("/api/v1/jobtrends/usajobs");

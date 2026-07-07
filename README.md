@@ -55,9 +55,11 @@ rebuildable, so taxonomy/comp logic can evolve without re-fetching.
 - Sources: HN (`ingest.py`) + **continuous boards** in the shared `ats_jobs` table
   (snapshot + `first_seen`/`last_seen`/`is_open`, so open→closed history accrues
   from deploy): **ATS company boards** (`ats.py`, Greenhouse, `source='ats'`,
-  curated `SEED_COMPANIES`) and **remote aggregators** (`remote_boards.py`,
-  Remotive + RemoteOK, `source='remote_board'`). Reports filter on `source` so each
-  signal stays clean.
+  curated `SEED_COMPANIES`), **remote aggregators** (`remote_boards.py`, Remotive +
+  RemoteOK, `source='remote_board'`), and **USAJobs** (`usajobs.py`, federal,
+  `source='usajobs'`). Reports filter on `source` so each signal stays clean.
+  USAJobs needs a free key: set `USAJOBS_API_KEY` + `USAJOBS_USER_AGENT` (a contact
+  email) — request it at developer.usajobs.gov; the snapshot no-ops without it.
 - Analysis (derived, rebuilt from raw): `taxonomy.py` + `extract.py` (keyword
   presence → `keyword_month_stats`), `comp.py` (precision-first salary parsing →
   `post_comp`), `recurrence.py` (author cohorts/churn → `cohort_month`),
@@ -84,4 +86,6 @@ uv run python -m app.jobtrends.cli ats-snapshot         # snapshot ATS company b
 uv run python -m app.jobtrends.cli ats                  # open roles per company
 uv run python -m app.jobtrends.cli remote-snapshot      # snapshot remote boards
 uv run python -m app.jobtrends.cli remote               # remote roles by category
+uv run python -m app.jobtrends.cli usajobs-snapshot     # snapshot USAJobs (needs key)
+uv run python -m app.jobtrends.cli usajobs              # federal roles by agency
 ```

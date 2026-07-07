@@ -24,5 +24,12 @@ class Settings(BaseSettings):
     # Daily loop: a month's thread is caught within a day of being posted.
     jobtrends_ingest_interval_seconds: int = 86_400
 
+    # --- USAJobs (federal jobs) — free self-service API key from
+    # developer.usajobs.gov, emailed on signup. Empty key = snapshot skips. The
+    # User-Agent must be a contact email per USAJobs' terms. ---
+    usajobs_api_key: str = ""
+    usajobs_user_agent: str = ""
+    usajobs_max_pages: int = 4  # x500 results/page = bounded recent sample
+
 
 settings = Settings()

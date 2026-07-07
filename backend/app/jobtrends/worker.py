@@ -61,6 +61,15 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: remote snapshot failed; will retry next interval")
 
+    # USAJobs snapshot — isolated; no-ops if no API key is configured.
+    try:
+        from app.jobtrends.usajobs import UsaJobsClient, usajobs_snapshot
+
+        with SessionLocal() as session:
+            usajobs_snapshot(session, UsaJobsClient())
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: USAJobs snapshot failed; will retry next interval")
+
 
 def _setup_logging() -> None:
     # force=True so a second call replaces handlers — alembic's fileConfig (run during
