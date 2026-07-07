@@ -1028,6 +1028,20 @@ button:disabled {
   align-items: center;
   gap: 12px;
 }
+.company-pay-list {
+  margin-top: 4px;
+}
+.company-pay-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 12px;
+}
+.pay-n {
+  color: var(--ink-muted);
+  font-weight: 600;
+  font-size: 12px;
+}
 .skill-comp-list {
   display: flex;
   flex-direction: column;

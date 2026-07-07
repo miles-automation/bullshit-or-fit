@@ -200,6 +200,19 @@ export interface CompSourcesResponse {
   sources: CompSource[];
 }
 
+export interface CompanyPay {
+  company_name: string;
+  company_token: string;
+  n_with_comp: number;
+  p25_usd: number;
+  median_usd: number;
+  p75_usd: number;
+}
+
+export interface CompanyPayResponse {
+  companies: CompanyPay[];
+}
+
 export interface MetroCount {
   metro: string;
   n_roles: number;
@@ -295,3 +308,6 @@ export const fetchSkillComp = () =>
 
 export const fetchLocations = () =>
   apiFetch<GeoResponse>("/api/v1/jobtrends/locations");
+
+export const fetchCompanyPay = () =>
+  apiFetch<CompanyPayResponse>("/api/v1/jobtrends/companies/pay");

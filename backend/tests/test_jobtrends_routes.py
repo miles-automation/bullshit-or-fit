@@ -19,6 +19,9 @@ class _EmptyResult:
     def scalars(self) -> "_EmptyResult":
         return self
 
+    def yield_per(self, _n: int) -> list:
+        return []
+
     def __iter__(self):
         return iter([])
 
@@ -115,6 +118,12 @@ def test_skills_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/skills")
     assert resp.status_code == 200
     assert resp.json() == {"total_roles": 0, "sources": [], "skills": []}
+
+
+def test_company_pay_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/companies/pay")
+    assert resp.status_code == 200
+    assert resp.json() == {"companies": []}
 
 
 def test_locations_route_empty_ok() -> None:

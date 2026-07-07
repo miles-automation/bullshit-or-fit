@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.jobtrends.ats import ats_report
+from app.jobtrends.company_pay import company_pay
 from app.jobtrends.comp import comp_sources, comp_trend
 from app.jobtrends.geo import geo_report
 from app.jobtrends.market import market_report
@@ -151,6 +152,19 @@ class SkillsOut(BaseModel):
     total_roles: int
     sources: list[str]
     skills: list[SkillOut]
+
+
+class CompanyPayOut(BaseModel):
+    company_name: str
+    company_token: str
+    n_with_comp: int
+    p25_usd: int
+    median_usd: int
+    p75_usd: int
+
+
+class CompanyPayListOut(BaseModel):
+    companies: list[CompanyPayOut]
 
 
 class MetroCountOut(BaseModel):
@@ -382,6 +396,24 @@ def get_skills(db: Session = Depends(get_db)) -> SkillsOut:
             )
             for s in report.skills
         ],
+    )
+
+
+@router.get("/companies/pay", response_model=CompanyPayListOut)
+def get_company_pay(db: Session = Depends(get_db)) -> CompanyPayListOut:
+    """Companies ranked by median advertised pay across their open roles."""
+    return CompanyPayListOut(
+        companies=[
+            CompanyPayOut(
+                company_name=c.company_name,
+                company_token=c.company_token,
+                n_with_comp=c.n_with_comp,
+                p25_usd=c.p25_usd,
+                median_usd=c.median_usd,
+                p75_usd=c.p75_usd,
+            )
+            for c in company_pay(db)
+        ]
     )
 
 
