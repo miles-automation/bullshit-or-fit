@@ -88,3 +88,84 @@ export function confirmLead(token: string): Promise<LeadConfirmResult> {
     `/api/v1/leads/confirm?token=${encodeURIComponent(token)}`,
   );
 }
+
+// ---- jobtrends (hiring-market dashboard) ----------------------------------
+
+export interface Mover {
+  keyword: string;
+  category: string;
+  latest_share: number;
+  mom_delta_pts: number;
+}
+
+export interface JobtrendsSummary {
+  first_month: string | null;
+  latest_month: string | null;
+  months: number;
+  total_posts: number;
+  distinct_authors: number;
+  recurring_pct: number;
+  comp_coverage_pct: number;
+  comp_median_usd: number;
+  risers: Mover[];
+  fallers: Mover[];
+}
+
+export interface TrendSeries {
+  keyword: string;
+  category: string;
+  shares: (number | null)[];
+  mom_delta_pts: number | null;
+}
+
+export interface TrendResponse {
+  months: string[];
+  series: TrendSeries[];
+}
+
+export interface CompMonth {
+  month: string;
+  posts_with_comp: number;
+  posts_total: number;
+  coverage_pct: number;
+  p25_usd: number;
+  median_usd: number;
+  p75_usd: number;
+}
+
+export interface CohortMonth {
+  month: string;
+  active: number;
+  new: number;
+  returning: number;
+  churned: number;
+}
+
+export interface ChurnResponse {
+  distinct_authors: number;
+  recurring_authors: number;
+  recurring_pct: number;
+  months: CohortMonth[];
+}
+
+export interface KeywordOption {
+  keyword: string;
+  category: string;
+}
+
+export const fetchSummary = () =>
+  apiFetch<JobtrendsSummary>("/api/v1/jobtrends/summary");
+
+export const fetchKeywords = () =>
+  apiFetch<KeywordOption[]>("/api/v1/jobtrends/keywords");
+
+export const fetchTrend = (keywords: string[]) =>
+  apiFetch<TrendResponse>(
+    `/api/v1/jobtrends/trend?keywords=${encodeURIComponent(keywords.join(","))}`,
+  );
+
+export const fetchComp = () =>
+  apiFetch<{ months: CompMonth[] }>("/api/v1/jobtrends/comp");
+
+export const fetchChurn = () =>
+  apiFetch<ChurnResponse>("/api/v1/jobtrends/churn");
