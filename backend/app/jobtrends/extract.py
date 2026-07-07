@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
@@ -113,3 +113,14 @@ def rebuild_derived(session: Session) -> None:
     extract_comp_sources(session)
     # Comp × skill joins post_comp + taxonomy (needs both fresh) → runs last.
     extract_skill_comp(session)
+
+
+def latest_computed_at(session: Session) -> datetime | None:
+    """When the derived tables were last rebuilt — the freshest tick's timestamp.
+
+    Reads `keyword_month_stats.computed_at` (rebuilt every tick), for a "data as
+    of" stamp on the dashboard.
+    """
+    from sqlalchemy import func
+
+    return session.scalar(select(func.max(KeywordMonthStat.computed_at)))

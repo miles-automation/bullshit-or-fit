@@ -41,6 +41,12 @@ import { BandChart, ChurnChart, LineChart, SERIES_COLORS, type Line } from "./ch
 
 const DEFAULT_KEYWORDS = ["agents", "claude", "llm", "rust", "remote"];
 const usd = (n: number) => `$${Math.round(n / 1000)}k`;
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -180,9 +186,12 @@ export function TrendsDashboard() {
           <h1>What tech is actually hiring for</h1>
           <p className="muted">
             {summary
-              ? `${summary.total_posts.toLocaleString()} “Who is hiring?” posts across ${summary.months} months (${summary.first_month} → ${summary.latest_month}), parsed from Hacker News.`
+              ? `${summary.total_posts.toLocaleString()} Hacker News “Who is hiring?” posts across ${summary.months} months (${summary.first_month} → ${summary.latest_month}), plus live openings from company, remote, and federal job boards.`
               : "Loading the latest hiring signal…"}
           </p>
+          {summary?.data_updated && (
+            <p className="updated-line">Data updated {fmtDate(summary.data_updated)}</p>
+          )}
         </div>
         <a className="back-link" href="/">
           ← Bullshit or Fit
@@ -665,8 +674,18 @@ export function TrendsDashboard() {
       </section>
 
       <footer className="dash-foot muted">
-        Data: Hacker News “Who is hiring?” via the HN Algolia API. Analysis by jobtrends, the data
-        engine behind Bullshit or Fit.
+        <p>
+          <strong>How this works.</strong> Historical trends come from Hacker News “Who is
+          hiring?” threads (via the HN Algolia API). Live openings, comp, and locations come
+          from public company boards (Greenhouse, Ashby, Lever), remote aggregators (Remotive,
+          RemoteOK), and the federal USAJobs API. Compensation is read from structured pay
+          fields where a source provides them, otherwise parsed from the posting text;
+          everything is annualized to USD before it’s compared.
+        </p>
+        <p>
+          Continuous-board figures reflect roles open right now and refresh daily. Analysis by
+          jobtrends, the data engine behind Bullshit or Fit.
+        </p>
       </footer>
     </div>
   );
