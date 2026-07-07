@@ -68,6 +68,12 @@ def test_churn_route_empty_ok() -> None:
     assert body["distinct_authors"] == 0
 
 
+def test_market_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/market")
+    assert resp.status_code == 200
+    assert resp.json() == {"months": []}
+
+
 def test_summary_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/summary")
     assert resp.status_code == 200
@@ -75,3 +81,4 @@ def test_summary_route_empty_ok() -> None:
     assert body["total_posts"] == 0
     assert body["risers"] == []
     assert body["latest_month"] is None
+    assert body["seekers_per_100_jobs"] == 0.0

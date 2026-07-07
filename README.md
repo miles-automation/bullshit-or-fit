@@ -49,12 +49,16 @@ rebuildable, so taxonomy/comp logic can evolve without re-fetching.
 
 - Ingest: `hn_algolia.py` (API client), `ingest.py` (parse + idempotent upsert).
   Raw tables `jobtrends.hn_hiring_threads` / `hn_hiring_posts` (`raw_text` verbatim,
-  keyed on HN ids → re-running a month upserts, never duplicates).
+  keyed on HN ids → re-running a month upserts, never duplicates). Each row is
+  tagged with `source` (`hn`) + `stream` — the multi-source spine. Streams today:
+  `hiring` (jobs/demand) and `wants_hired` (candidates/supply).
 - Analysis (derived, rebuilt from raw): `taxonomy.py` + `extract.py` (keyword
   presence → `keyword_month_stats`), `comp.py` (precision-first salary parsing →
-  `post_comp`), `recurrence.py` (author cohorts/churn → `cohort_month`).
+  `post_comp`), `recurrence.py` (author cohorts/churn → `cohort_month`),
+  `market.py` (per-stream volume → `stream_month`). The keyword/comp/churn tables
+  are scoped to the `hiring` stream.
 - Reports: `trend.py` (keyword share-of-postings + MoM), comp coverage/quartiles,
-  monthly churn. Exposed via the CLI below.
+  monthly churn, and demand/supply (job-seekers per opening). Exposed via the CLI below.
 - Runtime: the `bullshit-or-fit-ingest` compose worker runs `alembic upgrade head`
   on boot, backfills ~18 months, then each day re-ingests the trailing months and
   rebuilds the derived tables. The landing/lead web app stays DB-free.
@@ -69,4 +73,5 @@ uv run python -m app.jobtrends.cli extract              # rebuild all derived ta
 uv run python -m app.jobtrends.cli trend python rust mcp # keyword share-of-postings
 uv run python -m app.jobtrends.cli comp                 # salary coverage + quartiles
 uv run python -m app.jobtrends.cli churn                # author recurrence + churn
+uv run python -m app.jobtrends.cli market               # demand/supply per month
 ```

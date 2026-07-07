@@ -107,8 +107,16 @@ export interface JobtrendsSummary {
   recurring_pct: number;
   comp_coverage_pct: number;
   comp_median_usd: number;
+  seekers_per_100_jobs: number;
   risers: Mover[];
   fallers: Mover[];
+}
+
+export interface MarketMonth {
+  month: string;
+  hiring_posts: number;
+  wants_hired_posts: number;
+  seekers_per_100_jobs: number;
 }
 
 export interface TrendSeries {
@@ -169,3 +177,6 @@ export const fetchComp = () =>
 
 export const fetchChurn = () =>
   apiFetch<ChurnResponse>("/api/v1/jobtrends/churn");
+
+export const fetchMarket = () =>
+  apiFetch<{ months: MarketMonth[] }>("/api/v1/jobtrends/market");

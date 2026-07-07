@@ -5,6 +5,7 @@
     python -m app.jobtrends.cli trend python rust mcp # keyword share-of-postings
     python -m app.jobtrends.cli comp                 # salary coverage + quartiles
     python -m app.jobtrends.cli churn                # author recurrence + churn
+    python -m app.jobtrends.cli market               # demand/supply per month
     python -m app.jobtrends.cli migrate              # alembic upgrade head
 
 Ingest is idempotent and the reports read only stored data, so re-running is
@@ -24,6 +25,7 @@ from app.jobtrends.comp import comp_trend, format_comp_table
 from app.jobtrends.extract import rebuild_derived
 from app.jobtrends.hn_algolia import HNAlgoliaClient
 from app.jobtrends.ingest import ingest_recent
+from app.jobtrends.market import format_market_table, market_report
 from app.jobtrends.recurrence import churn_report, format_churn_table
 from app.jobtrends.trend import format_trend_table, keyword_trend
 
@@ -76,6 +78,12 @@ def _cmd_churn() -> int:
     return 0
 
 
+def _cmd_market() -> int:
+    with SessionLocal() as session:
+        print(format_market_table(market_report(session)))  # noqa: T201
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -104,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("comp", help="salary coverage + midpoint quartiles by month")
     sub.add_parser("churn", help="author recurrence + monthly churn")
+    sub.add_parser("market", help="demand/supply — job-seekers per opening")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -118,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_comp()
     if args.cmd == "churn":
         return _cmd_churn()
+    if args.cmd == "market":
+        return _cmd_market()
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

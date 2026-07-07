@@ -44,12 +44,16 @@ class HNAlgoliaClient:
             resp.raise_for_status()
             return resp.json()
 
-    def search_hiring_stories(self, limit: int) -> list[dict[str, Any]]:
-        """Monthly 'Who is hiring?' stories, newest first (search_by_date order)."""
+    def search_stream_stories(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Monthly whoishiring stories matching `query`, newest first.
+
+        The same author filter serves every stream ('Who is hiring?', 'Who wants to
+        be hired?'); `query` narrows to the one we want. Callers still title-guard.
+        """
         data = self._get(
             "search_by_date",
             {
-                "query": "Ask HN: Who is hiring?",
+                "query": query,
                 "tags": "story,author_whoishiring",
                 "hitsPerPage": limit,
             },
