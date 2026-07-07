@@ -96,6 +96,7 @@ def rebuild_derived(session: Session) -> None:
     fully reconstructable from raw.
     """
     from app.jobtrends.comp import extract_comp, extract_comp_sources
+    from app.jobtrends.geo import extract_geo
     from app.jobtrends.market import extract_streams
     from app.jobtrends.recurrence import extract_cohorts
     from app.jobtrends.skill_comp import extract_skill_comp
@@ -106,6 +107,7 @@ def rebuild_derived(session: Session) -> None:
     extract_cohorts(session)
     extract_streams(session)
     extract_skill_demand(session)
+    extract_geo(session)
     # Comp unification reads both post_comp (above) and the ats_jobs comp columns,
     # so it runs last — after every raw source has been snapshotted this tick.
     extract_comp_sources(session)

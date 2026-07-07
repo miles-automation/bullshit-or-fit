@@ -117,6 +117,12 @@ def test_skills_route_empty_ok() -> None:
     assert resp.json() == {"total_roles": 0, "sources": [], "skills": []}
 
 
+def test_locations_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/locations")
+    assert resp.status_code == 200
+    assert resp.json() == {"sources": []}
+
+
 def test_skill_comp_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/skills/comp")
     assert resp.status_code == 200
