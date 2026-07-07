@@ -83,3 +83,17 @@ def extract_all(session: Session) -> dict[str, int]:
         len(rows),
     )
     return {"keywords": len(patterns), "months": len(totals), "rows": len(rows)}
+
+
+def rebuild_derived(session: Session) -> None:
+    """Rebuild every derived table from the raw corpus: keyword stats, comp, cohorts.
+
+    Imported lazily to keep this module's import graph flat (comp/recurrence import
+    only models). All three are cheap and fully reconstructable from raw.
+    """
+    from app.jobtrends.comp import extract_comp
+    from app.jobtrends.recurrence import extract_cohorts
+
+    extract_all(session)
+    extract_comp(session)
+    extract_cohorts(session)
