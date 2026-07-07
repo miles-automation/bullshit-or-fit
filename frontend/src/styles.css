@@ -868,3 +868,83 @@ button:disabled {
     width: 100%;
   }
 }
+
+/* jobtrends teaser on the landing page */
+.teaser {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: center;
+  background: linear-gradient(135deg, #17233c 0%, var(--deep-panel) 100%);
+  border-color: var(--deep-line);
+}
+.teaser h2 {
+  color: #fff;
+  margin: 10px 0 8px;
+}
+.teaser p {
+  color: #c8d2e6;
+  margin: 0 0 18px;
+  max-width: 54ch;
+}
+.teaser-badge {
+  color: #ffd9c6;
+  border-color: rgba(240, 90, 42, 0.55);
+  background: rgba(240, 90, 42, 0.12);
+}
+.teaser-cta {
+  display: inline-block;
+  padding: 11px 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.14s ease;
+}
+.teaser-cta:hover {
+  background: var(--accent-strong);
+}
+.teaser-stats {
+  display: grid;
+  gap: 14px;
+}
+.teaser-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--deep-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.teaser-num {
+  font-family: 'Archivo', 'Segoe UI', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+}
+.teaser-cap {
+  font-size: 13px;
+  color: #aab6cf;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 720px) {
+  .teaser {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .teaser-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .teaser-stats > div {
+    align-items: center;
+    text-align: center;
+    padding: 12px 8px;
+  }
+  .teaser-cap {
+    font-size: 11px;
+  }
+}

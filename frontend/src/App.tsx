@@ -7,6 +7,7 @@ import {
   resendConfirmation,
   confirmLead,
 } from "./api";
+import { TrendsTeaser } from "./TrendsTeaser";
 
 interface LeadForm {
   name: string;
@@ -241,6 +242,8 @@ export function App() {
             ))}
           </div>
         </section>
+
+        <TrendsTeaser />
 
         <section id="how-it-works" className="section-shell">
           <h2>How it works</h2>
