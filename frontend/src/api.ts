@@ -108,6 +108,7 @@ export interface JobtrendsSummary {
   comp_coverage_pct: number;
   comp_median_usd: number;
   seekers_per_100_jobs: number;
+  data_updated: string | null;
   risers: Mover[];
   fallers: Mover[];
 }

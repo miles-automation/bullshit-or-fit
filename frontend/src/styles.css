@@ -1125,6 +1125,19 @@ button:disabled {
   padding: 0 6px;
   font-size: 12.5px;
 }
+.dash-foot p {
+  margin: 0 0 8px;
+  max-width: 70ch;
+  line-height: 1.5;
+}
+.updated-line {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 @media (max-width: 720px) {
   .stat-grid {

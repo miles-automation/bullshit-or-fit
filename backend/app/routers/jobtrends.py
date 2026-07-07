@@ -15,6 +15,7 @@ from app.db import get_db
 from app.jobtrends.ats import ats_report
 from app.jobtrends.company_pay import company_pay
 from app.jobtrends.comp import comp_sources, comp_trend
+from app.jobtrends.extract import latest_computed_at
 from app.jobtrends.geo import geo_report
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
@@ -212,6 +213,7 @@ class SummaryOut(BaseModel):
     comp_coverage_pct: float
     comp_median_usd: int
     seekers_per_100_jobs: float  # latest month; 0 if no candidate data
+    data_updated: str | None  # ISO timestamp of the last derived rebuild
     risers: list[Mover]
     fallers: list[Mover]
 
@@ -470,6 +472,7 @@ def get_summary(db: Session = Depends(get_db)) -> SummaryOut:
     trend = keyword_trend(db, None)
     market = market_report(db)
     cats = keyword_category()
+    updated = latest_computed_at(db)
 
     total_posts = sum(m.posts_total for m in comp)
     with_comp = sum(m.posts_with_comp for m in comp)
@@ -504,6 +507,7 @@ def get_summary(db: Session = Depends(get_db)) -> SummaryOut:
         comp_coverage_pct=round(comp_coverage, 1),
         comp_median_usd=comp_median,
         seekers_per_100_jobs=market[-1].seekers_per_100_jobs if market else 0.0,
+        data_updated=updated.isoformat() if updated else None,
         risers=risers,
         fallers=fallers,
     )

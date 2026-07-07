@@ -146,3 +146,4 @@ def test_summary_route_empty_ok() -> None:
     assert body["risers"] == []
     assert body["latest_month"] is None
     assert body["seekers_per_100_jobs"] == 0.0
+    assert body["data_updated"] is None
