@@ -43,6 +43,20 @@ def test_seattle_not_captured_by_dc_washington() -> None:
     assert classify_location("Seattle, Washington")[0] == "Seattle"
 
 
+def test_dc_area_abbreviated_forms() -> None:
+    # Regression (Codex): aliases must match the common abbreviated forms, not just
+    # the spelled-out ones — a trailing \b after "d"/"v" clipped "DC"/"VA".
+    for s in ("Washington, DC", "Washington D.C.", "Arlington, VA", "Alexandria, VA"):
+        assert classify_location(s)[0] == "Washington DC", s
+    # ...but a same-named city in another state must not be captured.
+    assert classify_location("Arlington, Texas")[0] == "Other"
+
+
+def test_cambridge_massachusetts_is_boston() -> None:
+    assert classify_location("Cambridge, Massachusetts")[0] == "Boston"
+    assert classify_location("Cambridge, MA")[0] == "Boston"
+
+
 # ---- geo_report (fake session over location_stat) -------------------------
 
 

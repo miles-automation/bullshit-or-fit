@@ -56,7 +56,10 @@ _METROS: list[tuple[str, re.Pattern[str]]] = [
         ),
         ("New York", ["new york", "nyc", "brooklyn", "manhattan"]),
         ("Seattle", ["seattle", "bellevue", "redmond"]),
-        ("Boston", ["boston", "cambridge, ma", "somerville"]),
+        (
+            "Boston",
+            ["boston", "cambridge, ma", "cambridge, massachusetts", "somerville"],
+        ),
         ("Austin", ["austin"]),
         ("Denver", ["denver", "boulder"]),
         ("Los Angeles", ["los angeles", "santa monica", "pasadena"]),
@@ -65,10 +68,13 @@ _METROS: list[tuple[str, re.Pattern[str]]] = [
             "Washington DC",
             [
                 "district of columbia",
-                "washington, d",
-                "washington d.c",
-                "arlington, v",
-                "alexandria, v",
+                # Washington DC / D.C. — comma optional, periods optional. Must be a
+                # complete token so "Washington, DC" isn't clipped to "…, d".
+                r"washington,? d\.?c\.?",
+                # Northern-VA duty stations — the state token is required so
+                # "Arlington, Texas" doesn't land here.
+                r"arlington,? (?:va|virginia)",
+                r"alexandria,? (?:va|virginia)",
                 "quantico",
                 "reston",
             ],
