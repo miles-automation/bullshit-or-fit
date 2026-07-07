@@ -124,7 +124,20 @@ def usajobs_snapshot(
     run_at = datetime.now(tz=UTC)
     fetched = 0
     for page in range(1, pages + 1):
-        payload = client.search(page)
+        try:
+            payload = client.search(page)
+        except httpx.HTTPError as exc:
+            # USAJobs is behind Akamai, which IP-blocks many datacenter/cloud egress
+            # IPs (an edge 403). Degrade to a warning and leave existing rows intact —
+            # do NOT close_missing on a failed fetch, or a transient block would wrongly
+            # flip every federal role to closed.
+            logger.warning(
+                "jobtrends: USAJobs fetch failed on page %s (%s) — likely a CDN/IP "
+                "block from this host; leaving prior data intact",
+                page,
+                exc.__class__.__name__,
+            )
+            return {"configured": 1, "blocked": 1, "open_roles": _open_count(session)}
         jobs, _total = parse_usajobs(payload)
         if not jobs:
             break
@@ -134,17 +147,24 @@ def usajobs_snapshot(
     close_missing(session, run_at, provider=PROVIDER_USAJOBS)
     session.commit()
 
-    open_roles = session.scalar(
-        select(func.count())
-        .select_from(AtsJob)
-        .where(AtsJob.is_open.is_(True), AtsJob.source == SOURCE_USAJOBS)
-    )
+    open_roles = _open_count(session)
     logger.info(
         "jobtrends: USAJobs snapshot complete — %s fetched, %s open",
         fetched,
         open_roles,
     )
-    return {"configured": 1, "open_roles": int(open_roles or 0)}
+    return {"configured": 1, "blocked": 0, "open_roles": open_roles}
+
+
+def _open_count(session: Session) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(AtsJob)
+            .where(AtsJob.is_open.is_(True), AtsJob.source == SOURCE_USAJOBS)
+        )
+        or 0
+    )
 
 
 @dataclass(frozen=True)

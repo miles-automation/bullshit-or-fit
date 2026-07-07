@@ -8,7 +8,12 @@ wiring against a realistic sample payload, DB-free.
 import httpx
 
 from app.jobtrends.ats import SOURCE_USAJOBS
-from app.jobtrends.usajobs import PROVIDER_USAJOBS, UsaJobsClient, parse_usajobs
+from app.jobtrends.usajobs import (
+    PROVIDER_USAJOBS,
+    UsaJobsClient,
+    parse_usajobs,
+    usajobs_snapshot,
+)
 
 # Trimmed but shape-accurate USAJobs /api/search response.
 PAYLOAD = {
@@ -108,3 +113,37 @@ def test_client_sends_auth_headers() -> None:
     assert payload["SearchResult"]["SearchResultCountAll"] == 18432
     assert seen["authorization-key"] == "secret-key"
     assert seen["user-agent"] == "me@example.com"
+
+
+class _BlockedSession:
+    """Fake session for the CDN-block path: usajobs_snapshot returns early before
+    touching the DB except for the open-count read."""
+
+    def scalar(self, *_a, **_k) -> int:  # noqa: ANN002, ANN003
+        return 0
+
+    def execute(self, *_a, **_k):  # noqa: ANN002, ANN003, ANN201
+        raise AssertionError("must not write/close when the fetch is blocked")
+
+    def commit(self) -> None:
+        raise AssertionError("must not commit when the fetch is blocked")
+
+
+def test_snapshot_degrades_on_cdn_block() -> None:
+    # Simulate Akamai's edge 403 — the client raises, snapshot must not crash or
+    # close existing rows.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="Access Denied")
+
+    client = UsaJobsClient(
+        api_key="k", user_agent="me@example.com", transport=httpx.MockTransport(handler)
+    )
+    result = usajobs_snapshot(_BlockedSession(), client, max_pages=4)
+    assert result == {"configured": 1, "blocked": 1, "open_roles": 0}
+
+
+def test_snapshot_skips_without_key() -> None:
+    result = usajobs_snapshot(
+        _BlockedSession(), UsaJobsClient(api_key="", user_agent="")
+    )
+    assert result == {"configured": 0, "open_roles": 0}
