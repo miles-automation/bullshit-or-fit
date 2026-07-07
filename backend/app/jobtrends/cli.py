@@ -21,6 +21,13 @@ import sys
 from app.config import settings
 from app.db import SessionLocal
 from app.jobtrends import migrate
+from app.jobtrends.ats import (
+    SEED_COMPANIES,
+    AtsClient,
+    ats_report,
+    ats_snapshot,
+    format_ats_table,
+)
 from app.jobtrends.comp import comp_trend, format_comp_table
 from app.jobtrends.extract import rebuild_derived
 from app.jobtrends.hn_algolia import HNAlgoliaClient
@@ -84,6 +91,22 @@ def _cmd_market() -> int:
     return 0
 
 
+def _cmd_ats_snapshot() -> int:
+    with SessionLocal() as session:
+        summary = ats_snapshot(session, AtsClient(), SEED_COMPANIES)
+    print(  # noqa: T201
+        f"snapshot: {summary['open_roles']} open roles across "
+        f"{summary['companies_ok']} companies"
+    )
+    return 0
+
+
+def _cmd_ats() -> int:
+    with SessionLocal() as session:
+        print(format_ats_table(ats_report(session)))  # noqa: T201
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -113,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("comp", help="salary coverage + midpoint quartiles by month")
     sub.add_parser("churn", help="author recurrence + monthly churn")
     sub.add_parser("market", help="demand/supply — job-seekers per opening")
+    sub.add_parser("ats-snapshot", help="snapshot ATS company boards (Greenhouse)")
+    sub.add_parser("ats", help="open roles per company (from the latest snapshot)")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -129,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_churn()
     if args.cmd == "market":
         return _cmd_market()
+    if args.cmd == "ats-snapshot":
+        return _cmd_ats_snapshot()
+    if args.cmd == "ats":
+        return _cmd_ats()
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

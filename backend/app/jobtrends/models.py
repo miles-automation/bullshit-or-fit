@@ -22,6 +22,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -194,4 +195,41 @@ class StreamMonth(Base):
     author_count: Mapped[int] = mapped_column(Integer, nullable=False)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AtsJob(Base):
+    """RAW: a single ATS job posting (source='ats'), one row per role.
+
+    A continuous-board source (Greenhouse today), unlike the HN monthly archive:
+    ATS APIs expose only *currently open* roles, so we snapshot on each run and
+    track `first_seen`/`last_seen`/`is_open` to accrue open→closed history over
+    time. `id` = '<provider>:<company_token>:<external_id>' (stable per role).
+    """
+
+    __tablename__ = "ats_jobs"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    source: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'ats'")
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    company_token: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    company_name: Mapped[str] = mapped_column(Text, nullable=False)
+    external_id: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    location: Mapped[str | None] = mapped_column(Text)
+    department: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
+    content_text: Mapped[str] = mapped_column(Text, nullable=False)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    is_open: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), index=True
     )

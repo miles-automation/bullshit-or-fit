@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type ChurnResponse,
   type CompMonth,
+  type CompaniesResponse,
   type JobtrendsSummary,
   type KeywordOption,
   type MarketMonth,
   type Mover,
   type TrendResponse,
   fetchChurn,
+  fetchCompanies,
   fetchComp,
   fetchKeywords,
   fetchMarket,
@@ -51,16 +53,25 @@ export function TrendsDashboard() {
   const [comp, setComp] = useState<CompMonth[]>([]);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
+  const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchSummary(), fetchKeywords(), fetchComp(), fetchChurn(), fetchMarket()])
-      .then(([s, k, c, ch, mk]) => {
+    Promise.all([
+      fetchSummary(),
+      fetchKeywords(),
+      fetchComp(),
+      fetchChurn(),
+      fetchMarket(),
+      fetchCompanies(),
+    ])
+      .then(([s, k, c, ch, mk, co]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
         setChurn(ch);
         setMarket(mk.months);
+        setCompanies(co);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -215,6 +226,43 @@ export function TrendsDashboard() {
           </span>
         </div>
       </section>
+
+      {companies && companies.total_open > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>Who’s hiring right now</h2>
+              <p className="muted">
+                Live open roles pulled straight from {companies.companies} companies’ job
+                boards (Greenhouse). Refreshed daily.
+              </p>
+            </div>
+            <div className="market-ratio">
+              <span className="market-ratio-num">
+                {companies.total_open.toLocaleString()}
+              </span>
+              <span className="market-ratio-cap">open roles right now</span>
+            </div>
+          </div>
+          <ul className="co-list">
+            {companies.top.map((c) => {
+              const max = companies.top[0]?.open_roles || 1;
+              return (
+                <li key={c.company_token} className="co-row">
+                  <span className="co-name">{c.company_name}</span>
+                  <span className="co-bar-track">
+                    <span
+                      className="co-bar"
+                      style={{ width: `${Math.max(3, (100 * c.open_roles) / max)}%` }}
+                    />
+                  </span>
+                  <span className="co-count">{c.open_roles}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="section-shell">
         <h2>Keyword share of postings</h2>

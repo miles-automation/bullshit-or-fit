@@ -42,6 +42,16 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001 — a bad tick must not kill the loop
         logger.exception("jobtrends: ingest tick failed; will retry next interval")
 
+    # ATS snapshot runs in its own session/try so a board outage can't affect the
+    # HN pipeline above (or vice versa).
+    try:
+        from app.jobtrends.ats import SEED_COMPANIES, AtsClient, ats_snapshot
+
+        with SessionLocal() as session:
+            ats_snapshot(session, AtsClient(), SEED_COMPANIES)
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: ATS snapshot failed; will retry next interval")
+
 
 def _setup_logging() -> None:
     # force=True so a second call replaces handlers — alembic's fileConfig (run during
