@@ -96,6 +96,22 @@ def test_client_not_configured_without_key() -> None:
     assert UsaJobsClient(api_key="k", user_agent="me@example.com").configured is True
 
 
+def test_client_reads_proxy_and_transport_wins() -> None:
+    # proxy is stored from the constructor; a mock transport still takes precedence
+    # (httpx forbids both), so tests keep working regardless of proxy config.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=PAYLOAD)
+
+    client = UsaJobsClient(
+        api_key="k",
+        user_agent="me@example.com",
+        proxy="http://10.77.0.1:8888",
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.proxy == "http://10.77.0.1:8888"
+    assert client.search(page=1)["SearchResult"]["SearchResultCountAll"] == 18432
+
+
 def test_client_sends_auth_headers() -> None:
     seen: dict[str, str] = {}
 
