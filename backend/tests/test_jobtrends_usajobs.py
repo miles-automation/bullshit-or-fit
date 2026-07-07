@@ -76,6 +76,11 @@ def test_parse_usajobs_shape_and_total() -> None:
     assert j.department == "Information Technology"  # job category -> department
     assert j.location == "Arlington, Virginia"
     assert "Defend federal networks" in j.content_text  # html stripped
+    # Structured pay from PositionRemuneration (annual, no multiplier).
+    assert j.comp_kind == "structured"
+    assert j.comp_currency == "USD"
+    assert (j.comp_min, j.comp_max) == (99000, 153000)
+    assert j.comp_period == "year"
 
 
 def test_parse_usajobs_second_item_minimal() -> None:
@@ -85,6 +90,7 @@ def test_parse_usajobs_second_item_minimal() -> None:
     assert j.company_name == "Veterans Health Administration"
     assert j.department == "Medical"
     assert j.content_text == ""  # no JobSummary
+    assert j.comp_kind is None  # no PositionRemuneration -> no comp
 
 
 def test_parse_usajobs_empty() -> None:

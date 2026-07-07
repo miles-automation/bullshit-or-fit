@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.jobtrends.ats import ats_report
-from app.jobtrends.comp import comp_trend
+from app.jobtrends.comp import comp_sources, comp_trend
 from app.jobtrends.market import market_report
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
@@ -57,6 +57,20 @@ class CompMonthOut(BaseModel):
 
 class CompOut(BaseModel):
     months: list[CompMonthOut]
+
+
+class CompSourceOut(BaseModel):
+    source: str
+    n_roles: int
+    n_with_comp: int
+    coverage_pct: float
+    p25_usd: int
+    median_usd: int
+    p75_usd: int
+
+
+class CompSourcesOut(BaseModel):
+    sources: list[CompSourceOut]
 
 
 class CohortOut(BaseModel):
@@ -201,6 +215,26 @@ def get_comp(db: Session = Depends(get_db)) -> CompOut:
                 p75_usd=m.p75_midpoint,
             )
             for m in comp_trend(db)
+        ]
+    )
+
+
+@router.get("/comp/sources", response_model=CompSourcesOut)
+def get_comp_sources(db: Session = Depends(get_db)) -> CompSourcesOut:
+    """Pay quartiles per source on one comparable USD axis (HN vs companies vs
+    remote vs federal)."""
+    return CompSourcesOut(
+        sources=[
+            CompSourceOut(
+                source=r.source,
+                n_roles=r.n_roles,
+                n_with_comp=r.n_with_comp,
+                coverage_pct=r.coverage_pct,
+                p25_usd=r.p25_usd,
+                median_usd=r.median_usd,
+                p75_usd=r.p75_usd,
+            )
+            for r in comp_sources(db)
         ]
     )
 

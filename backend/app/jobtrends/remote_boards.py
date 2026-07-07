@@ -43,9 +43,15 @@ REMOTEOK_URL = "https://remoteok.com/api"
 
 
 def parse_remotive(payload: dict[str, Any]) -> list[ParsedJob]:
+    from app.jobtrends.comp import parsed_comp_fields
+
     jobs: list[ParsedJob] = []
     for j in payload.get("jobs") or []:
         company = str(j.get("company_name") or "").strip()
+        title = str(j.get("title") or "").strip()
+        content = _strip_html(j.get("description"))
+        # Remotive exposes a free-text `salary` field — parse it alongside the body.
+        comp = parsed_comp_fields(title, f"{j.get('salary') or ''}\n{content}")
         jobs.append(
             ParsedJob(
                 source=SOURCE_REMOTE,
@@ -53,24 +59,46 @@ def parse_remotive(payload: dict[str, Any]) -> list[ParsedJob]:
                 company_token=_slug_hint(company),
                 company_name=company or "Unknown",
                 external_id=str(j.get("id")),
-                title=str(j.get("title") or "").strip(),
+                title=title,
                 location=(j.get("candidate_required_location") or None),
                 department=(j.get("category") or None),  # category as the "function"
                 url=j.get("url"),
-                content_text=_strip_html(j.get("description")),
+                content_text=content,
                 posted_at=_parse_dt(j.get("publication_date")),
+                **(comp or {}),
             )
         )
     return jobs
 
 
 def parse_remoteok(payload: list[Any]) -> list[ParsedJob]:
+    from app.jobtrends.comp import annualize_structured, parsed_comp_fields
+
     jobs: list[ParsedJob] = []
     for j in payload:
         # The first array element is a legal/metadata notice, not a job.
         if not isinstance(j, dict) or not j.get("position"):
             continue
         company = str(j.get("company") or "").strip()
+        title = str(j.get("position") or "").strip()
+        content = _strip_html(j.get("description"))
+        # RemoteOK ships structured annual-USD salary_min/max on many rows; prefer
+        # it, else fall back to the free-text heuristic over title+content.
+        comp: dict[str, Any] | None = None
+        annual = annualize_structured(
+            j.get("salary_min"), j.get("salary_max"), "per year"
+        )
+        if annual is not None:
+            lo, hi = annual
+            comp = {
+                "comp_min": lo,
+                "comp_max": hi,
+                "comp_currency": "USD",
+                "comp_period": "year",
+                "comp_kind": "structured",
+            }
+        else:
+            comp = parsed_comp_fields(title, content)
         jobs.append(
             ParsedJob(
                 source=SOURCE_REMOTE,
@@ -78,12 +106,13 @@ def parse_remoteok(payload: list[Any]) -> list[ParsedJob]:
                 company_token=_slug_hint(company),
                 company_name=company or "Unknown",
                 external_id=str(j.get("id")),
-                title=str(j.get("position") or "").strip(),
+                title=title,
                 location=(j.get("location") or None),
                 department=None,
                 url=j.get("url"),
-                content_text=_strip_html(j.get("description")),
+                content_text=content,
                 posted_at=_parse_dt(j.get("date")),
+                **(comp or {}),
             )
         )
     return jobs

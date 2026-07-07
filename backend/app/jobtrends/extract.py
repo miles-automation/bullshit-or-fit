@@ -95,7 +95,7 @@ def rebuild_derived(session: Session) -> None:
     Imported lazily to keep this module's import graph flat. All are cheap and
     fully reconstructable from raw.
     """
-    from app.jobtrends.comp import extract_comp
+    from app.jobtrends.comp import extract_comp, extract_comp_sources
     from app.jobtrends.market import extract_streams
     from app.jobtrends.recurrence import extract_cohorts
     from app.jobtrends.skill_demand import extract_skill_demand
@@ -105,3 +105,6 @@ def rebuild_derived(session: Session) -> None:
     extract_cohorts(session)
     extract_streams(session)
     extract_skill_demand(session)
+    # Comp unification reads both post_comp (above) and the ats_jobs comp columns,
+    # so it runs last — after every raw source has been snapshotted this tick.
+    extract_comp_sources(session)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type ChurnResponse,
   type CompMonth,
+  type CompSource,
   type CompaniesResponse,
   type JobtrendsSummary,
   type KeywordOption,
@@ -12,6 +13,7 @@ import {
   type TrendResponse,
   type UsaJobsResponse,
   fetchChurn,
+  fetchCompSources,
   fetchCompanies,
   fetchComp,
   fetchKeywords,
@@ -24,6 +26,7 @@ import {
 } from "./api";
 
 const SOURCE_LABEL: Record<string, string> = {
+  hn: "HN posts",
   ats: "companies",
   remote_board: "remote",
   usajobs: "federal",
@@ -63,6 +66,7 @@ export function TrendsDashboard() {
   const [selected, setSelected] = useState<string[]>(DEFAULT_KEYWORDS);
   const [trend, setTrend] = useState<TrendResponse | null>(null);
   const [comp, setComp] = useState<CompMonth[]>([]);
+  const [compSources, setCompSources] = useState<CompSource[]>([]);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
@@ -82,8 +86,9 @@ export function TrendsDashboard() {
       fetchRemote(),
       fetchUsaJobs(),
       fetchSkills(),
+      fetchCompSources(),
     ])
-      .then(([s, k, c, ch, mk, co, rm, uj, sk]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -93,6 +98,7 @@ export function TrendsDashboard() {
         setRemote(rm);
         setUsajobs(uj);
         setSkills(sk);
+        setCompSources(cs.sources);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -122,6 +128,15 @@ export function TrendsDashboard() {
       })),
     [trend],
   );
+
+  // Shared USD axis for the per-source comp comparison: span every source that
+  // actually has pay data, so their p25–p75 bands are directly comparable.
+  const compScale = useMemo(() => {
+    const withComp = compSources.filter((s) => s.n_with_comp > 0);
+    const lo = Math.min(...withComp.map((s) => s.p25_usd));
+    const hi = Math.max(...withComp.map((s) => s.p75_usd));
+    return { lo, hi, span: Math.max(1, hi - lo), rows: withComp };
+  }, [compSources]);
 
   const toggle = (kw: string) =>
     setSelected((prev) =>
@@ -431,6 +446,44 @@ export function TrendsDashboard() {
                     </span>
                   </div>
                   <span className="co-count">{s.share}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {compScale.rows.length > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>What each channel pays</h2>
+              <p className="muted">
+                Median advertised pay per source on one axis (annualized USD). Federal
+                comes from structured USAJobs pay data; companies, remote and HN posts
+                from disclosed ranges. Bars span p25–p75; the tick is the median.
+              </p>
+            </div>
+          </div>
+          <ul className="comp-src-list">
+            {compScale.rows.map((s) => {
+              const left = (100 * (s.p25_usd - compScale.lo)) / compScale.span;
+              const width = (100 * (s.p75_usd - s.p25_usd)) / compScale.span;
+              const mid = (100 * (s.median_usd - compScale.lo)) / compScale.span;
+              return (
+                <li key={s.source} className="comp-src-row">
+                  <span className="comp-src-label">{SOURCE_LABEL[s.source] ?? s.source}</span>
+                  <span className="comp-src-track">
+                    <span
+                      className="comp-src-band"
+                      style={{ left: `${left}%`, width: `${Math.max(1.5, width)}%` }}
+                    />
+                    <span className="comp-src-tick" style={{ left: `${mid}%` }} />
+                  </span>
+                  <span className="comp-src-median">{usd(s.median_usd)}</span>
+                  <span className="comp-src-cov muted">
+                    {s.coverage_pct}% of {s.n_roles.toLocaleString()}
+                  </span>
                 </li>
               );
             })}
