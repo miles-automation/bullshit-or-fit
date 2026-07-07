@@ -4,6 +4,7 @@ import {
   type CompMonth,
   type CompSource,
   type CompaniesResponse,
+  type CompanyPay,
   type GeoSource,
   type JobtrendsSummary,
   type KeywordOption,
@@ -20,6 +21,7 @@ import {
   fetchComp,
   fetchKeywords,
   fetchMarket,
+  fetchCompanyPay,
   fetchLocations,
   fetchRemote,
   fetchSkillComp,
@@ -73,6 +75,7 @@ export function TrendsDashboard() {
   const [compSources, setCompSources] = useState<CompSource[]>([]);
   const [skillComp, setSkillComp] = useState<SkillCompRow[]>([]);
   const [geo, setGeo] = useState<GeoSource[]>([]);
+  const [companyPay, setCompanyPay] = useState<CompanyPay[]>([]);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
@@ -95,8 +98,9 @@ export function TrendsDashboard() {
       fetchCompSources(),
       fetchSkillComp(),
       fetchLocations(),
+      fetchCompanyPay(),
     ])
-      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp, lc]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp, lc, cp]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -109,6 +113,7 @@ export function TrendsDashboard() {
         setCompSources(cs.sources);
         setSkillComp(scp.skills);
         setGeo(lc.sources);
+        setCompanyPay(cp.companies);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -541,6 +546,41 @@ export function TrendsDashboard() {
                   <span className="comp-src-median">{usd(s.median_usd)}</span>
                   <span className="comp-src-cov muted">
                     {s.coverage_pct}% of {s.n_roles.toLocaleString()}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {companyPay.length > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>Who pays the most</h2>
+              <p className="muted">
+                Companies ranked by median advertised pay across their currently-open
+                roles (annualized USD; only companies with enough disclosed pay). n =
+                roles with pay.
+              </p>
+            </div>
+          </div>
+          <ul className="co-list company-pay-list">
+            {companyPay.map((c) => {
+              const max = companyPay[0]?.median_usd || 1;
+              return (
+                <li key={c.company_token} className="co-row company-pay-row">
+                  <span className="co-name">{c.company_name}</span>
+                  <span className="co-bar-track">
+                    <span
+                      className="co-bar"
+                      style={{ width: `${Math.max(4, (100 * c.median_usd) / max)}%` }}
+                    />
+                  </span>
+                  <span className="co-count">
+                    {usd(c.median_usd)}
+                    <span className="pay-n"> · {c.n_with_comp}</span>
                   </span>
                 </li>
               );
