@@ -27,23 +27,23 @@ logger = logging.getLogger(__name__)
 
 
 def _run_once(months: int) -> None:
+    # Order matters: refresh ALL raw sources first (HN posts + every
+    # continuous-board snapshot), THEN rebuild the derived tables — the derived
+    # skill-demand rollup reads ats_jobs, so rebuilding before the snapshots would
+    # leave it a tick stale (and mis-weight the cross-source shares). Each raw step
+    # is isolated so one source's outage can't sink the others.
     client = HNAlgoliaClient()
     try:
         with SessionLocal() as session:
             result = ingest_recent(session, client, months)
-            # Rebuild every derived table (keyword stats, comp, cohorts) from raw so
-            # the reports stay fresh. All cheap and fully reconstructable.
-            rebuild_derived(session)
         logger.info(
-            "jobtrends: tick complete — %s posts across %s months",
+            "jobtrends: HN ingest — %s posts across %s stream-months",
             sum(result.values()),
             len(result),
         )
-    except Exception:  # noqa: BLE001 — a bad tick must not kill the loop
-        logger.exception("jobtrends: ingest tick failed; will retry next interval")
+    except Exception:  # noqa: BLE001 — a bad source must not kill the loop
+        logger.exception("jobtrends: HN ingest failed; will retry next interval")
 
-    # ATS snapshot runs in its own session/try so a board outage can't affect the
-    # HN pipeline above (or vice versa).
     try:
         from app.jobtrends.ats import SEED_COMPANIES, AtsClient, ats_snapshot
 
@@ -52,7 +52,6 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: ATS snapshot failed; will retry next interval")
 
-    # Remote-board snapshot — likewise isolated.
     try:
         from app.jobtrends.remote_boards import RemoteClient, remote_snapshot
 
@@ -61,7 +60,7 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: remote snapshot failed; will retry next interval")
 
-    # USAJobs snapshot — isolated; no-ops if no API key is configured.
+    # USAJobs — no-ops if no API key is configured.
     try:
         from app.jobtrends.usajobs import UsaJobsClient, usajobs_snapshot
 
@@ -69,6 +68,14 @@ def _run_once(months: int) -> None:
             usajobs_snapshot(session, UsaJobsClient())
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: USAJobs snapshot failed; will retry next interval")
+
+    # Now that every raw source is fresh, rebuild all derived tables.
+    try:
+        with SessionLocal() as session:
+            rebuild_derived(session)
+        logger.info("jobtrends: tick complete — derived tables rebuilt")
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: derived rebuild failed; will retry next interval")
 
 
 def _setup_logging() -> None:
