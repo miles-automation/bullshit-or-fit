@@ -122,6 +122,30 @@ def test_parse_lever_shape_and_freetext_comp() -> None:
     assert (j.comp_min, j.comp_max) == (180000, 220000)
 
 
+def test_parse_lever_reads_lists_and_additional() -> None:
+    # Skills + pay commonly live in lists[]/additionalPlain, not descriptionPlain.
+    payload = [
+        {
+            "id": "x1",
+            "text": "Backend Engineer",
+            "categories": {"location": "Remote"},
+            "descriptionPlain": "Join our team building great things.",
+            "lists": [
+                {
+                    "text": "Requirements",
+                    "content": "<li>Deep Kubernetes experience</li>",
+                }
+            ],
+            "additionalPlain": "The salary range is $190,000-$230,000 plus equity.",
+        }
+    ]
+    j = parse_lever(LEVER, payload)[0]
+    assert "Kubernetes" in j.content_text  # list content included
+    assert "salary range" in j.content_text  # additional included
+    # comp parsed from additionalPlain, which descriptionPlain alone would miss
+    assert (j.comp_min, j.comp_max) == (190000, 230000)
+
+
 # ---- Ashby -----------------------------------------------------------------
 
 ASHBY = Company("Ramp", PROVIDER_ASHBY, "ramp")

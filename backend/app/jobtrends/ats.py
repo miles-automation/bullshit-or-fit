@@ -202,11 +202,26 @@ def _epoch_ms_dt(value: Any) -> datetime | None:
         return None
 
 
+def _lever_text(j: dict[str, Any]) -> str:
+    """Full posting text: the opening `descriptionPlain` is only the intro — the
+    responsibilities, requirements, benefits, and any pay live in `lists[*]` and
+    `additionalPlain`, so concatenate them all before stripping/parsing."""
+    pieces: list[str] = [
+        j.get("descriptionPlain") or j.get("descriptionBodyPlain") or ""
+    ]
+    for li in j.get("lists") or []:
+        if isinstance(li, dict):
+            pieces.append(str(li.get("text") or ""))
+            pieces.append(str(li.get("content") or ""))
+    pieces.append(str(j.get("additionalPlain") or ""))
+    return _strip_html(" ".join(p for p in pieces if p))
+
+
 def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
     """Lever `/v0/postings/{token}?mode=json` JSON array -> ParsedJob[]. Pure.
 
     Lever's `salaryRange` is rarely populated, so comp is free-text-parsed from
-    the description like Greenhouse.
+    the full posting text (opening + lists + additional) like Greenhouse.
     """
     from app.jobtrends.comp import parsed_comp_fields
 
@@ -216,7 +231,7 @@ def parse_lever(company: Company, payload: list[Any]) -> list[ParsedJob]:
             continue
         cats = j.get("categories") or {}
         title = str(j.get("text") or "").strip()
-        content = _strip_html(j.get("descriptionPlain") or j.get("descriptionBody"))
+        content = _lever_text(j)
         jobs.append(
             ParsedJob(
                 provider=PROVIDER_LEVER,
