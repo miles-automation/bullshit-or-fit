@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type KeywordOption,
   type MarketFitResponse,
@@ -221,10 +221,18 @@ export function MarketFitView() {
       .catch(() => {});
   }, []);
 
+  const latestWageReq = useRef("");
   const onLocation = (code: string) => {
     setLocation(code);
-    if (code) fetchWages(code).then(setWages).catch(() => {});
-    else setWages(null);
+    setWages(null); // clear immediately so the card never shows a stale state
+    latestWageReq.current = code;
+    if (code)
+      fetchWages(code)
+        .then((w) => {
+          // ignore out-of-order responses: only apply if this is still the pick
+          if (latestWageReq.current === code) setWages(w);
+        })
+        .catch(() => {});
   };
 
   const byCategory = useMemo(() => {
