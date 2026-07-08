@@ -151,6 +151,16 @@ def test_skill_comp_route_empty_ok() -> None:
     assert resp.json() == {"sources": [], "skills": []}
 
 
+def test_market_fit_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/market-fit?skills=react,python&comp=150000")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["skills"] == ["react", "python"]
+    assert body["comp_verdict"] == "unknown"  # no market data in an empty DB
+    assert body["matching_roles"] == 0
+    assert body["top_roles"] == []
+
+
 def test_summary_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/summary")
     assert resp.status_code == 200
