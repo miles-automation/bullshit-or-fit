@@ -18,6 +18,7 @@ from app.jobtrends.comp import comp_sources, comp_trend
 from app.jobtrends.extract import latest_computed_at
 from app.jobtrends.geo import geo_report
 from app.jobtrends.market import market_report
+from app.jobtrends.market_fit import evaluate as market_fit_evaluate
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
 from app.jobtrends.skill_comp import skill_comp
@@ -231,6 +232,38 @@ class SkillCompRowOut(BaseModel):
 class SkillCompOut(BaseModel):
     sources: list[str]
     skills: list[SkillCompRowOut]
+
+
+class SkillSignalOut(BaseModel):
+    skill: str
+    category: str
+    demand_share: float
+    mom_delta_pts: float | None
+    trajectory: str
+
+
+class RoleMatchOut(BaseModel):
+    company: str
+    title: str
+    source: str
+    skills_matched: int
+    comp_median_usd: int | None
+
+
+class MarketFitOut(BaseModel):
+    skills: list[str]
+    seniority: str | None
+    comp_usd: int | None
+    comp_n: int
+    comp_p25_usd: int
+    comp_median_usd: int
+    comp_p75_usd: int
+    comp_verdict: str
+    comp_delta_pct: float | None
+    skill_signals: list[SkillSignalOut]
+    gaps: list[SkillSignalOut]
+    matching_roles: int
+    top_roles: list[RoleMatchOut]
 
 
 class SummaryOut(BaseModel):
@@ -529,6 +562,34 @@ def get_skill_comp(db: Session = Depends(get_db)) -> SkillCompOut:
             )
             for s in report.skills
         ],
+    )
+
+
+@router.get("/market-fit", response_model=MarketFitOut)
+def get_market_fit(
+    skills: str = Query(default="", description="comma-separated taxonomy skills"),
+    seniority: str | None = Query(default=None),
+    comp: int | None = Query(default=None, description="claimed annual USD comp"),
+    db: Session = Depends(get_db),
+) -> MarketFitOut:
+    """The shared 'bullshit or fit?' engine: benchmark a profile (skills +
+    seniority + comp) against the live private-sector market."""
+    wanted = [s.strip().lower() for s in skills.split(",") if s.strip()]
+    r = market_fit_evaluate(db, skills=wanted, seniority=seniority, comp_usd=comp)
+    return MarketFitOut(
+        skills=r.skills,
+        seniority=r.seniority,
+        comp_usd=r.comp_usd,
+        comp_n=r.comp_n,
+        comp_p25_usd=r.comp_p25_usd,
+        comp_median_usd=r.comp_median_usd,
+        comp_p75_usd=r.comp_p75_usd,
+        comp_verdict=r.comp_verdict,
+        comp_delta_pct=r.comp_delta_pct,
+        skill_signals=[SkillSignalOut(**s.__dict__) for s in r.skill_signals],
+        gaps=[SkillSignalOut(**g.__dict__) for g in r.gaps],
+        matching_roles=r.matching_roles,
+        top_roles=[RoleMatchOut(**t.__dict__) for t in r.top_roles],
     )
 
 
