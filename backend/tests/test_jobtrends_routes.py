@@ -151,6 +151,14 @@ def test_skill_comp_route_empty_ok() -> None:
     assert resp.json() == {"sources": [], "skills": []}
 
 
+def test_wages_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/wages?area=WY")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["area"] is None and body["national"] is None
+    assert body["areas"] == []
+
+
 def test_market_fit_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/market-fit?skills=react,python&comp=150000")
     assert resp.status_code == 200

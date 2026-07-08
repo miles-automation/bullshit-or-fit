@@ -19,6 +19,7 @@ from app.jobtrends.extract import latest_computed_at
 from app.jobtrends.geo import geo_report
 from app.jobtrends.market import market_report
 from app.jobtrends.market_fit import evaluate as market_fit_evaluate
+from app.jobtrends.oews import available_areas, wage_bands
 from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
 from app.jobtrends.skill_comp import skill_comp
@@ -232,6 +233,23 @@ class SkillCompRowOut(BaseModel):
 class SkillCompOut(BaseModel):
     sources: list[str]
     skills: list[SkillCompRowOut]
+
+
+class WageBandOut(BaseModel):
+    area_code: str
+    area_name: str
+    p10_usd: int
+    p25_usd: int
+    median_usd: int
+    p75_usd: int
+    p90_usd: int
+
+
+class WagesOut(BaseModel):
+    occupation: str
+    area: WageBandOut | None
+    national: WageBandOut | None
+    areas: list[dict[str, str]]  # available state options for the picker
 
 
 class SkillSignalOut(BaseModel):
@@ -562,6 +580,23 @@ def get_skill_comp(db: Session = Depends(get_db)) -> SkillCompOut:
             )
             for s in report.skills
         ],
+    )
+
+
+@router.get("/wages", response_model=WagesOut)
+def get_wages(
+    area: str = Query(default="", description="2-letter state code, e.g. WY"),
+    db: Session = Depends(get_db),
+) -> WagesOut:
+    """Location-real BLS OEWS wage bands for software developers — what the job
+    actually pays where you are (all employers), vs. the head-heavy live feeds."""
+    r = wage_bands(db, area) if area else wage_bands(db, "US")
+    to_out = lambda b: WageBandOut(**b.__dict__) if b else None  # noqa: E731
+    return WagesOut(
+        occupation=r.occupation,
+        area=to_out(r.area),
+        national=to_out(r.national),
+        areas=available_areas(db),
     )
 
 

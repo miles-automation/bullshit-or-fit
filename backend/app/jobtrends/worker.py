@@ -78,6 +78,31 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: WARN ingest failed; will retry next interval")
 
+    # OEWS location wage bands — annual data, so refresh only if missing or stale.
+    try:
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import func, select
+
+        from app.jobtrends.models import OewsWage
+        from app.jobtrends.oews import STATES, OewsClient, load_oews
+
+        with SessionLocal() as session:
+            # Refresh if incomplete (a partial load left states missing) OR stale.
+            # Gate on the count + OLDEST row, not the newest — a partial run commits
+            # per state, so max(updated_at) could look fresh while most are absent.
+            loaded = session.scalar(
+                select(func.count())
+                .select_from(OewsWage)
+                .where(OewsWage.area_type == "state")
+            )
+            oldest = session.scalar(select(func.min(OewsWage.updated_at)))
+            stale = oldest is None or oldest < datetime.now(UTC) - timedelta(days=30)
+            if int(loaded or 0) < len(STATES) or stale:
+                load_oews(session, OewsClient())
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: OEWS load failed; will retry next interval")
+
     # Now that every raw source is fresh, rebuild all derived tables.
     try:
         with SessionLocal() as session:

@@ -266,6 +266,31 @@ class KeywordSourceDemand(Base):
     )
 
 
+class OewsWage(Base):
+    """BLS OEWS wage percentiles for an occupation by area (national + per state).
+
+    The location-real, all-employer comp signal — sourced via O*NET (bls.gov
+    bot-blocks). Refreshed occasionally (OEWS is annual); reads back per area.
+    """
+
+    __tablename__ = "oews_wage"
+    __table_args__ = {"schema": SCHEMA}
+
+    soc: Mapped[str] = mapped_column(Text, primary_key=True)
+    occupation: Mapped[str] = mapped_column(Text, nullable=False)
+    area_type: Mapped[str] = mapped_column(Text, nullable=False)
+    area_code: Mapped[str] = mapped_column(Text, primary_key=True)
+    area_name: Mapped[str] = mapped_column(Text, nullable=False)
+    p10_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    p25_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    median_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    p75_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    p90_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class WarnNotice(Base):
     """RAW: a single WARN Act layoff filing (source='warn'), one row per notice.
 
