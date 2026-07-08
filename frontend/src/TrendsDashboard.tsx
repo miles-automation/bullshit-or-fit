@@ -197,6 +197,9 @@ export function TrendsDashboard() {
           {summary?.data_updated && (
             <p className="updated-line">Data updated {fmtDate(summary.data_updated)}</p>
           )}
+          <a className="mf-cta" href="/you">
+            → Where do <em>you</em> stand? Check your market fit
+          </a>
         </div>
         <a className="back-link" href="/">
           ← Bullshit or Fit

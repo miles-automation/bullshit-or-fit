@@ -201,6 +201,38 @@ export interface CompSourcesResponse {
   sources: CompSource[];
 }
 
+export interface SkillSignal {
+  skill: string;
+  category: string;
+  demand_share: number;
+  mom_delta_pts: number | null;
+  trajectory: string; // 'rising' | 'flat' | 'falling'
+}
+
+export interface RoleMatch {
+  company: string;
+  title: string;
+  source: string;
+  skills_matched: number;
+  comp_median_usd: number | null;
+}
+
+export interface MarketFitResponse {
+  skills: string[];
+  seniority: string | null;
+  comp_usd: number | null;
+  comp_n: number;
+  comp_p25_usd: number;
+  comp_median_usd: number;
+  comp_p75_usd: number;
+  comp_verdict: string; // 'under' | 'fit' | 'over' | 'unknown'
+  comp_delta_pct: number | null;
+  skill_signals: SkillSignal[];
+  gaps: SkillSignal[];
+  matching_roles: number;
+  top_roles: RoleMatch[];
+}
+
 export interface WarnMonth {
   month: string;
   notices: number;
@@ -344,3 +376,14 @@ export const fetchCompanyPay = () =>
 
 export const fetchLayoffs = () =>
   apiFetch<LayoffsResponse>("/api/v1/jobtrends/layoffs");
+
+export const fetchMarketFit = (
+  skills: string[],
+  seniority: string | null,
+  comp: number | null,
+) => {
+  const p = new URLSearchParams({ skills: skills.join(",") });
+  if (seniority) p.set("seniority", seniority);
+  if (comp) p.set("comp", String(comp));
+  return apiFetch<MarketFitResponse>(`/api/v1/jobtrends/market-fit?${p.toString()}`);
+};
