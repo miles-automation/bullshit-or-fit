@@ -201,6 +201,35 @@ export interface CompSourcesResponse {
   sources: CompSource[];
 }
 
+export interface WarnMonth {
+  month: string;
+  notices: number;
+  employees_affected: number;
+}
+
+export interface WarnNotice {
+  company: string;
+  state: string;
+  city: string | null;
+  employees_affected: number | null;
+  notice_date: string | null;
+}
+
+export interface WarnState {
+  state: string;
+  notices: number;
+  employees_affected: number;
+}
+
+export interface LayoffsResponse {
+  total_notices: number;
+  total_employees: number;
+  states: string[];
+  months: WarnMonth[];
+  recent: WarnNotice[];
+  by_state: WarnState[];
+}
+
 export interface CompanyPay {
   company_name: string;
   company_token: string;
@@ -312,3 +341,6 @@ export const fetchLocations = () =>
 
 export const fetchCompanyPay = () =>
   apiFetch<CompanyPayResponse>("/api/v1/jobtrends/companies/pay");
+
+export const fetchLayoffs = () =>
+  apiFetch<LayoffsResponse>("/api/v1/jobtrends/layoffs");

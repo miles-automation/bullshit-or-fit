@@ -6,6 +6,7 @@ import {
   type CompaniesResponse,
   type CompanyPay,
   type GeoSource,
+  type LayoffsResponse,
   type JobtrendsSummary,
   type KeywordOption,
   type MarketMonth,
@@ -22,6 +23,7 @@ import {
   fetchKeywords,
   fetchMarket,
   fetchCompanyPay,
+  fetchLayoffs,
   fetchLocations,
   fetchRemote,
   fetchSkillComp,
@@ -82,6 +84,7 @@ export function TrendsDashboard() {
   const [skillComp, setSkillComp] = useState<SkillCompRow[]>([]);
   const [geo, setGeo] = useState<GeoSource[]>([]);
   const [companyPay, setCompanyPay] = useState<CompanyPay[]>([]);
+  const [layoffs, setLayoffs] = useState<LayoffsResponse | null>(null);
   const [churn, setChurn] = useState<ChurnResponse | null>(null);
   const [market, setMarket] = useState<MarketMonth[]>([]);
   const [companies, setCompanies] = useState<CompaniesResponse | null>(null);
@@ -105,8 +108,9 @@ export function TrendsDashboard() {
       fetchSkillComp(),
       fetchLocations(),
       fetchCompanyPay(),
+      fetchLayoffs(),
     ])
-      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp, lc, cp]) => {
+      .then(([s, k, c, ch, mk, co, rm, uj, sk, cs, scp, lc, cp, lo]) => {
         setSummary(s);
         setKeywords(k);
         setComp(c.months);
@@ -120,6 +124,7 @@ export function TrendsDashboard() {
         setSkillComp(scp.skills);
         setGeo(lc.sources);
         setCompanyPay(cp.companies);
+        setLayoffs(lo);
       })
       .catch((e) => setError(String(e?.detail ?? e)));
   }, []);
@@ -286,6 +291,58 @@ export function TrendsDashboard() {
           </span>
         </div>
       </section>
+
+      {layoffs && layoffs.total_notices > 0 && (
+        <section className="section-shell">
+          <div className="market-head">
+            <div>
+              <h2>Layoffs (WARN filings)</h2>
+              <p className="muted">
+                The other side of supply: employees affected by mass layoffs, from official
+                state WARN Act filings ({layoffs.states.join(", ")}). Bucketed by the month the
+                notice was filed.
+              </p>
+            </div>
+            <div className="market-ratio">
+              <span className="market-ratio-num">
+                {(layoffs.total_employees / 1000).toFixed(0)}k
+              </span>
+              <span className="market-ratio-cap">
+                employees affected · {layoffs.total_notices.toLocaleString()} filings
+              </span>
+            </div>
+          </div>
+          <div className="chart-wrap">
+            <LineChart
+              months={layoffs.months.slice(-24).map((m) => m.month)}
+              lines={[
+                {
+                  label: "employees affected",
+                  color: "#c03e18",
+                  values: layoffs.months.slice(-24).map((m) => m.employees_affected),
+                },
+              ]}
+              fmtY={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${Math.round(v)}`)}
+            />
+          </div>
+          <p className="co-caption">Most recent filings</p>
+          <ul className="warn-list">
+            {layoffs.recent.slice(0, 8).map((n, i) => (
+              <li key={`${n.company}-${i}`} className="warn-row">
+                <span className="warn-co">{n.company}</span>
+                <span className="warn-loc muted">
+                  {n.city ? `${n.city}, ` : ""}
+                  {n.state}
+                </span>
+                <span className="warn-emp">
+                  {n.employees_affected != null ? n.employees_affected.toLocaleString() : "—"}
+                </span>
+                <span className="warn-date muted">{n.notice_date}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {companies && companies.total_open > 0 && (
         <section className="section-shell">

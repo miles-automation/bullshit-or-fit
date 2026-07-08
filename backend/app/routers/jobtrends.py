@@ -22,6 +22,7 @@ from app.jobtrends.recurrence import churn_report
 from app.jobtrends.remote_boards import remote_report
 from app.jobtrends.skill_comp import skill_comp
 from app.jobtrends.skill_demand import skill_demand
+from app.jobtrends.warn import warn_months, warn_report
 from app.jobtrends.taxonomy import keyword_category
 from app.jobtrends.trend import keyword_trend
 from app.jobtrends.usajobs import usajobs_report
@@ -153,6 +154,35 @@ class SkillsOut(BaseModel):
     total_roles: int
     sources: list[str]
     skills: list[SkillOut]
+
+
+class WarnMonthOut(BaseModel):
+    month: str
+    notices: int
+    employees_affected: int
+
+
+class WarnNoticeOut(BaseModel):
+    company: str
+    state: str
+    city: str | None
+    employees_affected: int | None
+    notice_date: str | None
+
+
+class WarnStateOut(BaseModel):
+    state: str
+    notices: int
+    employees_affected: int
+
+
+class LayoffsOut(BaseModel):
+    total_notices: int
+    total_employees: int
+    states: list[str]
+    months: list[WarnMonthOut]
+    recent: list[WarnNoticeOut]
+    by_state: list[WarnStateOut]
 
 
 class CompanyPayOut(BaseModel):
@@ -397,6 +427,44 @@ def get_skills(db: Session = Depends(get_db)) -> SkillsOut:
                 by_source=s.by_source,
             )
             for s in report.skills
+        ],
+    )
+
+
+@router.get("/layoffs", response_model=LayoffsOut)
+def get_layoffs(db: Session = Depends(get_db)) -> LayoffsOut:
+    """Supply-side signal: WARN Act layoff filings — monthly volume, recent
+    notices, and per-state totals across the tracked states."""
+    report = warn_report(db)
+    return LayoffsOut(
+        total_notices=report.total_notices,
+        total_employees=report.total_employees,
+        states=report.states,
+        months=[
+            WarnMonthOut(
+                month=m.month,
+                notices=m.notices,
+                employees_affected=m.employees_affected,
+            )
+            for m in warn_months(db)
+        ],
+        recent=[
+            WarnNoticeOut(
+                company=n.company,
+                state=n.state,
+                city=n.city,
+                employees_affected=n.employees_affected,
+                notice_date=n.notice_date,
+            )
+            for n in report.recent
+        ],
+        by_state=[
+            WarnStateOut(
+                state=s.state,
+                notices=s.notices,
+                employees_affected=s.employees_affected,
+            )
+            for s in report.by_state
         ],
     )
 

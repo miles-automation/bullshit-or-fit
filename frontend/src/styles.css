@@ -1042,6 +1042,52 @@ button:disabled {
   font-weight: 600;
   font-size: 12px;
 }
+.warn-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.warn-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 64px 92px;
+  align-items: baseline;
+  gap: 10px;
+}
+.warn-co {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.warn-loc {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.warn-emp {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+.warn-date {
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 480px) {
+  .warn-row {
+    grid-template-columns: minmax(0, 1fr) 52px 74px;
+  }
+  .warn-loc {
+    display: none;
+  }
+}
 .skill-comp-list {
   display: flex;
   flex-direction: column;
