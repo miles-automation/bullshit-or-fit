@@ -1,12 +1,13 @@
 """Unit tests for the WARN Act supply source (pure parse + fake-session readers)."""
 
-from datetime import date
+from datetime import date, datetime
 
 import httpx
 
 from app.jobtrends.warn import (
     WARN_SOURCES,
     WarnClient,
+    parse_california,
     parse_oregon,
     parse_texas,
     warn_months,
@@ -121,6 +122,98 @@ def test_oregon_multi_site_same_warn_stays_distinct() -> None:
     out = parse_oregon(rows)
     assert len({n.id for n in out}) == 2
     assert sum(n.employees_affected or 0 for n in out) == 586
+
+
+def _make_ca_xlsx(data_rows: list) -> bytes:
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Detailed WARN Report "  # trailing space, as EDD ships it
+    ws.append(["WARN REPORT - 07/01/2025 to 06/30/2026"])  # r1 title
+    ws.append(
+        [
+            "County/Parish",
+            "Notice Date",
+            "Processed Date",
+            "Effective Date",
+            "Company",
+            "Layoff/Closure",
+            "No. Of Employees",
+            "Address",
+            "Related Industry",
+        ]
+    )  # r2 header
+    for r in data_rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_california() -> None:
+    content = _make_ca_xlsx(
+        [
+            [
+                "San Mateo County",
+                datetime(2026, 5, 22),
+                datetime(2026, 5, 22),
+                datetime(2026, 7, 21),
+                "Meta Platforms, Inc.",
+                "Layoff Permanent",
+                "2212",
+                "1 Hacker Way  Menlo Park",
+                "51 Information",
+            ],
+            # empty-company row -> skipped
+            ["LA County", datetime(2025, 7, 1), None, None, "", "", "10", "x", "y"],
+        ]
+    )
+    out = parse_california(content)
+    assert len(out) == 1
+    n = out[0]
+    assert n.state == "CA"
+    assert n.company == "Meta Platforms, Inc."
+    assert n.employees_affected == 2212
+    assert n.notice_date == date(2026, 5, 22)
+    assert n.effective_date == date(2026, 7, 21)
+    assert n.city == "San Mateo County"  # EDD gives county
+    assert n.layoff_type == "Layoff Permanent"
+    assert n.id.startswith("CA:")
+    assert parse_california(content)[0].id == n.id  # deterministic
+
+
+def test_warn_client_excel_fetch() -> None:
+    ca = next(s for s in WARN_SOURCES if s.state == "CA")
+    assert ca.fmt == "excel"
+    content = _make_ca_xlsx(
+        [
+            [
+                "Santa Clara County",
+                datetime(2026, 4, 1),
+                None,
+                None,
+                "Acme Corp",
+                "Closure Permanent",
+                "50",
+                "addr",
+                "ind",
+            ]
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "edd.ca.gov" in request.url.host
+        return httpx.Response(
+            200,
+            content=content,
+            headers={"content-type": "application/octet-stream"},
+        )
+
+    out = WarnClient(transport=httpx.MockTransport(handler)).fetch(ca)
+    assert [n.company for n in out] == ["Acme Corp"]
 
 
 def test_parse_handles_bad_values() -> None:
