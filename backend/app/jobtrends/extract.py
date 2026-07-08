@@ -101,6 +101,7 @@ def rebuild_derived(session: Session) -> None:
     from app.jobtrends.recurrence import extract_cohorts
     from app.jobtrends.skill_comp import extract_skill_comp
     from app.jobtrends.skill_demand import extract_skill_demand
+    from app.jobtrends.warn import extract_warn_month
 
     extract_all(session)
     extract_comp(session)
@@ -108,6 +109,7 @@ def rebuild_derived(session: Session) -> None:
     extract_streams(session)
     extract_skill_demand(session)
     extract_geo(session)
+    extract_warn_month(session)
     # Comp unification reads both post_comp (above) and the ats_jobs comp columns,
     # so it runs last — after every raw source has been snapshotted this tick.
     extract_comp_sources(session)

@@ -120,6 +120,19 @@ def test_skills_route_empty_ok() -> None:
     assert resp.json() == {"total_roles": 0, "sources": [], "skills": []}
 
 
+def test_layoffs_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/layoffs")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "total_notices": 0,
+        "total_employees": 0,
+        "states": [],
+        "months": [],
+        "recent": [],
+        "by_state": [],
+    }
+
+
 def test_company_pay_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/companies/pay")
     assert resp.status_code == 200

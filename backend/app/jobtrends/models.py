@@ -266,6 +266,46 @@ class KeywordSourceDemand(Base):
     )
 
 
+class WarnNotice(Base):
+    """RAW: a single WARN Act layoff filing (source='warn'), one row per notice.
+
+    A supply-side signal — workers entering the market — from state labor
+    departments' public WARN databases (Socrata JSON feeds). Immutable history:
+    a past filing doesn't change, so ingestion upserts on a deterministic `id`
+    ('<state>:<external-or-composite>') and never duplicates.
+    """
+
+    __tablename__ = "warn_notices"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    company: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str | None] = mapped_column(Text)
+    employees_affected: Mapped[int | None] = mapped_column(Integer)
+    notice_date: Mapped[date | None] = mapped_column(Date, index=True)
+    effective_date: Mapped[date | None] = mapped_column(Date)
+    layoff_type: Mapped[str | None] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WarnMonth(Base):
+    """Derived: WARN filings + employees affected per month, from warn_notices
+    (bucketed by notice/announcement date). Rebuilt each tick."""
+
+    __tablename__ = "warn_month"
+    __table_args__ = {"schema": SCHEMA}
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    notices: Mapped[int] = mapped_column(Integer, nullable=False)
+    employees_affected: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class LocationStat(Base):
     """Derived: role counts per (source, metro bucket) with a remote tally.
 

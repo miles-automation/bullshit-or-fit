@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # which IP-blocks datacenter egress; route via a residential-IP proxy. Empty =
     # direct (works from dev/residential IPs, blocked from the prod droplet).
     usajobs_proxy: str = ""
+    # Per-state Socrata page size for WARN ingestion (each tracked state's full
+    # dataset is a few thousand rows, so one request covers it).
+    warn_max_records: int = 50000
 
 
 settings = Settings()

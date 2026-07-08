@@ -158,6 +158,23 @@ def _cmd_skills() -> int:
     return 0
 
 
+def _cmd_warn_ingest() -> int:
+    from app.jobtrends.warn import WarnClient, warn_ingest
+
+    with SessionLocal() as session:
+        result = warn_ingest(session, WarnClient())
+    print(f"warn: ingested {sum(result.values())} notices {result}")  # noqa: T201
+    return 0
+
+
+def _cmd_warn() -> int:
+    from app.jobtrends.warn import format_warn_table, warn_report
+
+    with SessionLocal() as session:
+        print(format_warn_table(warn_report(session)))  # noqa: T201
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -194,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("usajobs-snapshot", help="snapshot USAJobs (federal; needs API key)")
     sub.add_parser("usajobs", help="federal roles by agency/category")
     sub.add_parser("skills", help="cross-source skill demand across live openings")
+    sub.add_parser("warn-ingest", help="ingest WARN Act layoff filings (TX/OR)")
+    sub.add_parser("warn", help="WARN layoff filings — recent notices + totals")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -222,6 +241,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_usajobs_snapshot()
     if args.cmd == "usajobs":
         return _cmd_usajobs()
+    if args.cmd == "warn-ingest":
+        return _cmd_warn_ingest()
+    if args.cmd == "warn":
+        return _cmd_warn()
     if args.cmd == "skills":
         return _cmd_skills()
     if args.cmd == "migrate":

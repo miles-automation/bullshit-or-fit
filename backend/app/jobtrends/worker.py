@@ -69,6 +69,15 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: USAJobs snapshot failed; will retry next interval")
 
+    # WARN filings (supply side) — idempotent upsert of each state's feed.
+    try:
+        from app.jobtrends.warn import WarnClient, warn_ingest
+
+        with SessionLocal() as session:
+            warn_ingest(session, WarnClient())
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: WARN ingest failed; will retry next interval")
+
     # Now that every raw source is fresh, rebuild all derived tables.
     try:
         with SessionLocal() as session:
