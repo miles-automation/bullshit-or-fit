@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type KeywordOption,
   type MarketFitResponse,
+  type WagesResponse,
   fetchKeywords,
   fetchMarketFit,
+  fetchWages,
 } from "./api";
 
 const SENIORITIES = ["junior", "mid", "senior", "staff", "principal"];
@@ -155,6 +157,49 @@ function MarketFitResult({ r }: { r: MarketFitResponse }) {
   );
 }
 
+function LocationWages({ w }: { w: WagesResponse }) {
+  const a = w.area;
+  if (!a) return null;
+  const lo = a.p10_usd;
+  const hi = a.p90_usd;
+  const span = Math.max(1, hi - lo);
+  const pos = (v: number) =>
+    `${Math.min(100, Math.max(0, (100 * (v - lo)) / span))}%`;
+  return (
+    <section className="section-shell">
+      <div className="market-head">
+        <div>
+          <h2>What it actually pays in {a.area_name}</h2>
+          <p className="muted">
+            BLS OEWS — software developers, <strong>all employers</strong> in your
+            state (not just the well-known/remote roles the match above skews toward).
+            This is the honest local floor-to-ceiling.
+          </p>
+        </div>
+      </div>
+      <div className="mf-band-wrap">
+        <span className="mf-band-end">{usd(lo)}</span>
+        <span className="mf-band-track">
+          <span className="mf-band-fill" />
+          <span className="mf-band-tick" style={{ left: pos(a.p25_usd) }} />
+          <span className="mf-band-tick" style={{ left: pos(a.median_usd) }}>
+            <span className="mf-band-lbl">median {usd(a.median_usd)}</span>
+          </span>
+          <span className="mf-band-tick" style={{ left: pos(a.p75_usd) }} />
+        </span>
+        <span className="mf-band-end">{usd(hi)}</span>
+      </div>
+      <p className="mf-blurb muted">
+        Band = 10th–90th percentile ({usd(lo)}–{usd(hi)}); ticks are the 25th, median,
+        and 75th.
+        {w.national ? ` The US median is ${usd(w.national.median_usd)}.` : ""} The
+        big-name remote roles in the match above often sit near — or above — your
+        state's 90th percentile, so treat those as the stretch, not the baseline.
+      </p>
+    </section>
+  );
+}
+
 export function MarketFitView() {
   const [keywords, setKeywords] = useState<KeywordOption[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
@@ -163,12 +208,24 @@ export function MarketFitView() {
   const [result, setResult] = useState<MarketFitResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [areas, setAreas] = useState<{ code: string; name: string }[]>([]);
+  const [location, setLocation] = useState("");
+  const [wages, setWages] = useState<WagesResponse | null>(null);
 
   useEffect(() => {
     fetchKeywords()
       .then(setKeywords)
       .catch(() => {});
+    fetchWages("")
+      .then((w) => setAreas(w.areas))
+      .catch(() => {});
   }, []);
+
+  const onLocation = (code: string) => {
+    setLocation(code);
+    if (code) fetchWages(code).then(setWages).catch(() => {});
+    else setWages(null);
+  };
 
   const byCategory = useMemo(() => {
     const g: Record<string, string[]> = {};
@@ -228,6 +285,17 @@ export function MarketFitView() {
         </div>
         <div className="mf-controls">
           <label className="mf-field">
+            <span>Your state</span>
+            <select value={location} onChange={(e) => onLocation(e.target.value)}>
+              <option value="">Select…</option>
+              {areas.map((a) => (
+                <option key={a.code} value={a.code}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mf-field">
             <span>Seniority</span>
             <select value={seniority} onChange={(e) => setSeniority(e.target.value)}>
               <option value="">Any</option>
@@ -264,6 +332,8 @@ export function MarketFitView() {
           </p>
         )}
       </section>
+
+      {wages && <LocationWages w={wages} />}
 
       {result && <MarketFitResult r={result} />}
 

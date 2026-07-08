@@ -78,6 +78,22 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: WARN ingest failed; will retry next interval")
 
+    # OEWS location wage bands — annual data, so refresh only if missing or stale.
+    try:
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import func, select
+
+        from app.jobtrends.models import OewsWage
+        from app.jobtrends.oews import OewsClient, load_oews
+
+        with SessionLocal() as session:
+            newest = session.scalar(select(func.max(OewsWage.updated_at)))
+            if newest is None or newest < datetime.now(UTC) - timedelta(days=30):
+                load_oews(session, OewsClient())
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: OEWS load failed; will retry next interval")
+
     # Now that every raw source is fresh, rebuild all derived tables.
     try:
         with SessionLocal() as session:

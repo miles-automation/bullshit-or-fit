@@ -201,6 +201,23 @@ export interface CompSourcesResponse {
   sources: CompSource[];
 }
 
+export interface WageBand {
+  area_code: string;
+  area_name: string;
+  p10_usd: number;
+  p25_usd: number;
+  median_usd: number;
+  p75_usd: number;
+  p90_usd: number;
+}
+
+export interface WagesResponse {
+  occupation: string;
+  area: WageBand | null;
+  national: WageBand | null;
+  areas: { code: string; name: string }[];
+}
+
 export interface SkillSignal {
   skill: string;
   category: string;
@@ -376,6 +393,9 @@ export const fetchCompanyPay = () =>
 
 export const fetchLayoffs = () =>
   apiFetch<LayoffsResponse>("/api/v1/jobtrends/layoffs");
+
+export const fetchWages = (area: string) =>
+  apiFetch<WagesResponse>(`/api/v1/jobtrends/wages?area=${encodeURIComponent(area)}`);
 
 export const fetchMarketFit = (
   skills: string[],

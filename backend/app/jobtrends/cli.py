@@ -175,6 +175,29 @@ def _cmd_warn() -> int:
     return 0
 
 
+def _cmd_oews_load() -> int:
+    from app.jobtrends.oews import OewsClient, load_oews
+
+    with SessionLocal() as session:
+        result = load_oews(session, OewsClient())
+    print(f"oews: loaded {result['states']} states")  # noqa: T201
+    return 0
+
+
+def _cmd_wages(area: str) -> int:
+    from app.jobtrends.oews import wage_bands
+
+    with SessionLocal() as session:
+        r = wage_bands(session, area)
+    for label, b in (("national", r.national), (area.upper(), r.area)):
+        if b:
+            print(  # noqa: T201
+                f"  {label:<14} p10 ${b.p10_usd // 1000}k | median ${b.median_usd // 1000}k"
+                f" | p90 ${b.p90_usd // 1000}k"
+            )
+    return 0
+
+
 def _cmd_migrate() -> int:
     migrate.upgrade_to_head()
     print("migrations applied (alembic upgrade head)")  # noqa: T201
@@ -213,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("skills", help="cross-source skill demand across live openings")
     sub.add_parser("warn-ingest", help="ingest WARN Act layoff filings (TX/OR)")
     sub.add_parser("warn", help="WARN layoff filings — recent notices + totals")
+    sub.add_parser("oews-load", help="load BLS OEWS wage bands by state (via O*NET)")
+    p_wages = sub.add_parser("wages", help="OEWS wage bands for a state (+ national)")
+    p_wages.add_argument("area", help="2-letter state code, e.g. WY")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -245,6 +271,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_warn_ingest()
     if args.cmd == "warn":
         return _cmd_warn()
+    if args.cmd == "oews-load":
+        return _cmd_oews_load()
+    if args.cmd == "wages":
+        return _cmd_wages(args.area)
     if args.cmd == "skills":
         return _cmd_skills()
     if args.cmd == "migrate":
