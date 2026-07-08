@@ -1,15 +1,16 @@
 """WARN Act filings — a supply-side source (workers entering the market).
 
 Under the federal WARN Act, larger employers must file advance notice of mass
-layoffs/closures with their state. Several states publish that database as a
-Socrata JSON feed (a real API, unlike layoffs.fyi's hand-curated Airtable), so we
-ingest them here. Currently Texas + Oregon; more states slot in as new WARN_SOURCES
-entries with a per-state parser (schemas differ).
+layoffs/closures with their state. States publish that database in different
+shapes: Texas + Oregon as Socrata JSON feeds, California as an .xlsx export from
+EDD (a rolling current-fiscal-year file, our highest tech-signal source). Each is
+a WARN_SOURCES entry with a `fmt` and a per-state parser; more states slot in the
+same way.
 
 WARN history is immutable — a past filing doesn't change — so ingestion upserts on
 a deterministic id and is fully idempotent (no snapshot/close-detection like the
-demand-side boards). `parse_texas`/`parse_oregon` are pure; WarnClient is httpx with
-an injectable transport for tests.
+demand-side boards). All parsers are pure; WarnClient is httpx with an injectable
+transport for tests.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import httpx
@@ -142,26 +143,99 @@ def parse_oregon(rows: Any) -> list[ParsedWarn]:
     return out
 
 
+def _excel_date(value: Any) -> date | None:
+    """openpyxl (data_only) hands back datetimes; tolerate ISO strings too."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return _warn_date(value)
+
+
+def parse_california(content: bytes) -> list[ParsedWarn]:
+    """California EDD 'Detailed WARN Report' .xlsx bytes -> ParsedWarn[]. Pure.
+
+    Columns: County | Notice Date | Processed Date | Effective Date | Company |
+    Layoff/Closure | No. Of Employees | Address | Industry. Rows 1–2 are the title
+    and header; data follows. The file is a rolling current-fiscal-year report.
+    """
+    import io
+    import warnings
+
+    import openpyxl
+
+    out: list[ParsedWarn] = []
+    # read-only openpyxl warns (lazily, during iteration) about an unsupported
+    # data-validation extension — suppress it across the whole read.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        sheet = next(
+            (s for s in wb.sheetnames if s.strip().lower().startswith("detailed warn")),
+            wb.sheetnames[0],
+        )
+        for row in wb[sheet].iter_rows(min_row=3, values_only=True):
+            cols = list(row) + [None] * (9 - len(row))
+            (
+                county,
+                notice,
+                _processed,
+                effective,
+                company_raw,
+                ltype,
+                emp,
+                address,
+                _ind,
+            ) = cols[:9]
+            company = str(company_raw or "").strip()
+            if not company:
+                continue
+            notice_d = _excel_date(notice)
+            county_s = str(county or "").strip() or None
+            out.append(
+                ParsedWarn(
+                    id=_warn_id(
+                        "CA", None, notice_d, company, county_s, address, _warn_int(emp)
+                    ),
+                    state="CA",
+                    company=company,
+                    city=county_s,  # EDD gives county, not city
+                    employees_affected=_warn_int(emp),
+                    notice_date=notice_d,
+                    effective_date=_excel_date(effective),
+                    layoff_type=str(ltype or "").strip() or None,
+                )
+            )
+    return out
+
+
 @dataclass(frozen=True)
 class WarnSource:
     state: str
     url: str
-    order_field: str
     parser: Any  # Callable[[Any], list[ParsedWarn]]
+    fmt: str = "socrata"  # 'socrata' (JSON) | 'excel' (.xlsx bytes)
+    order_field: str | None = None
 
 
 WARN_SOURCES: list[WarnSource] = [
     WarnSource(
         "TX",
         "https://data.texas.gov/resource/8w53-c4f6.json",
-        "notice_date",
         parse_texas,
+        order_field="notice_date",
     ),
     WarnSource(
         "OR",
         "https://data.oregon.gov/resource/ijbz-jpx8.json",
-        "received_date",
         parse_oregon,
+        order_field="received_date",
+    ),
+    WarnSource(
+        "CA",
+        "https://edd.ca.gov/siteassets/files/jobs_and_training/warn/warn_report1.xlsx",
+        parse_california,
+        fmt="excel",
     ),
 ]
 
@@ -170,7 +244,7 @@ class WarnClient:
     def __init__(
         self,
         *,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 60.0,
         transport: httpx.BaseTransport | None = None,
         user_agent: str | None = None,
     ) -> None:
@@ -179,13 +253,19 @@ class WarnClient:
         self._user_agent = user_agent or settings.jobtrends_user_agent
 
     def fetch(self, source: WarnSource) -> list[ParsedWarn]:
-        params = {
-            "$order": f"{source.order_field} DESC",
-            "$limit": str(settings.warn_max_records),
-        }
         with httpx.Client(
-            timeout=self.timeout_seconds, transport=self._transport
+            timeout=self.timeout_seconds,
+            transport=self._transport,
+            follow_redirects=True,
         ) as client:
+            if source.fmt == "excel":
+                resp = client.get(source.url, headers={"User-Agent": self._user_agent})
+                resp.raise_for_status()
+                return source.parser(resp.content)
+            params = {
+                "$order": f"{source.order_field} DESC",
+                "$limit": str(settings.warn_max_records),
+            }
             resp = client.get(
                 source.url, params=params, headers={"User-Agent": self._user_agent}
             )
