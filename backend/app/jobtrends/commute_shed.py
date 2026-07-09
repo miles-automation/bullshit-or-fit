@@ -286,7 +286,7 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Fort Collins",
         hq_state="CO",
         distance_mi=65,
-        careers_url="https://www.advancedenergy.com/en-us/about/",
+        careers_url="https://jobs.advanced-energy.com/",
         notes="Fort Collins-HQ power-conversion hardware co; embedded/controls SWE.",
     ),
     ShedEmployer(
