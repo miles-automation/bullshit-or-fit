@@ -438,23 +438,32 @@ def sync_registry(session: Session) -> int:
     return len(rows)
 
 
+@dataclass(frozen=True)
+class SnapshotResult:
+    employers_ok: int
+    open_roles: int
+    refreshed_tokens: tuple[str, ...]  # feeds that fetched OK this run
+
+
 def commute_shed_snapshot(
     session: Session,
     client: AtsClient,
     workday_client: WorkdayClient | None = None,
-) -> dict[str, int]:
+) -> SnapshotResult:
     """Snapshot the live-feed subset of the registry into ats_jobs.
 
     For each seed employer that has a feed, fetch it (Greenhouse/Lever/Ashby via the
     token board; Workday via the CXS API), keep only in-reach roles (`role_in_shed`),
     stamp source='commute_shed', upsert, then close anything that employer no longer
-    lists *within this source*. One bad board is logged and skipped. Returns
-    {employers_ok, open_roles}.
+    lists *within this source*. One bad board is logged and skipped. Returns a
+    SnapshotResult whose `refreshed_tokens` are ONLY the feeds that succeeded this
+    run — so daily-stats recording can skip employers whose fetch failed (a partial
+    outage must not poison the velocity history with a stale/zero count).
     """
     workday_client = workday_client or WorkdayClient()
     run_at = datetime.now(tz=UTC)
     feeds = [e for e in SEED_EMPLOYERS if e.provider and e.ats_token]
-    ok = 0
+    refreshed: list[str] = []
     for e in feeds:
         try:
             if e.provider == PROVIDER_WORKDAY:
@@ -489,7 +498,7 @@ def commute_shed_snapshot(
             source=SOURCE_COMMUTE_SHED,
         )
         session.commit()
-        ok += 1
+        refreshed.append(e.ats_token)  # type: ignore[arg-type]
         logger.info(
             "jobtrends: commute-shed %s — %s/%s roles in reach",
             e.ats_token,
@@ -520,31 +529,29 @@ def commute_shed_snapshot(
     )
     logger.info(
         "jobtrends: commute-shed snapshot complete — %s feeds, %s open roles",
-        ok,
+        len(refreshed),
         open_roles,
     )
-    return {"employers_ok": ok, "open_roles": int(open_roles or 0)}
-
-
-def record_daily_stats(session: Session) -> int:
-    """Snapshot today's per-employer open-role count into commute_shed_stat.
-
-    Called once per tick after the snapshot. Upserts on (captured_on, token) so
-    repeated ticks in a day just refresh the count; the accumulating daily series is
-    what powers real "heating up / cooling" trajectory over weeks. Returns rows
-    written. Records only currently-active feed tokens.
-    """
-    today = datetime.now(tz=UTC).date()
-    active_tokens = (
-        session.execute(
-            select(CommuteShedEmployer.ats_token).where(
-                CommuteShedEmployer.active.is_(True),
-                CommuteShedEmployer.ats_token.is_not(None),
-            )
-        )
-        .scalars()
-        .all()
+    return SnapshotResult(
+        employers_ok=len(refreshed),
+        open_roles=int(open_roles or 0),
+        refreshed_tokens=tuple(refreshed),
     )
+
+
+def record_daily_stats(session: Session, tokens: list[str]) -> int:
+    """Snapshot today's open-role count into commute_shed_stat, for `tokens` only.
+
+    Called once per tick after the snapshot, passed ONLY the feeds that refreshed
+    successfully this run (`SnapshotResult.refreshed_tokens`). Recording a failed
+    feed would write a stale/zero count that then poisons the 30d velocity baseline,
+    so a partial outage simply leaves a one-day gap (the baseline query tolerates
+    gaps). Upserts on (captured_on, token) so repeated ticks in a day just refresh.
+    Returns rows written.
+    """
+    if not tokens:
+        return 0
+    today = datetime.now(tz=UTC).date()
     counts = {
         token: int(n)
         for token, n in session.execute(
@@ -552,16 +559,14 @@ def record_daily_stats(session: Session) -> int:
             .where(
                 AtsJob.is_open.is_(True),
                 AtsJob.source == SOURCE_COMMUTE_SHED,
-                AtsJob.company_token.in_(active_tokens),
+                AtsJob.company_token.in_(tokens),
             )
             .group_by(AtsJob.company_token)
         ).all()
     }
-    if not active_tokens:
-        return 0
     rows = [
         {"captured_on": today, "token": t, "open_roles": counts.get(t, 0)}
-        for t in active_tokens
+        for t in tokens
     ]
     stmt = pg_insert(CommuteShedStat).values(rows)
     stmt = stmt.on_conflict_do_update(

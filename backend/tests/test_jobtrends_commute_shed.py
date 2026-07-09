@@ -7,12 +7,23 @@ from app.jobtrends.commute_shed import (
     TIER_LARAMIE,
     TIER_WY_REMOTE,
     commute_shed_report,
+    record_daily_stats,
     role_in_shed,
 )
 from app.jobtrends.models import CommuteShedEmployer
 
 
 # ---- id namespacing: parallel streams never collide ---------------------
+
+
+def test_record_daily_stats_noop_when_nothing_refreshed() -> None:
+    # A tick where every feed failed passes no tokens → record nothing (don't touch
+    # the DB), so an outage day can't write a stale/zero velocity baseline.
+    class _Boom:
+        def execute(self, *_a, **_k):  # noqa: ANN002, ANN003, ANN202
+            raise AssertionError("record_daily_stats must not query on empty tokens")
+
+    assert record_daily_stats(_Boom(), []) == 0  # type: ignore[arg-type]
 
 
 def test_commute_shed_is_not_a_public_source() -> None:
