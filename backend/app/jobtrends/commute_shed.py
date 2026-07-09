@@ -393,7 +393,9 @@ def role_in_shed(location: str | None, tier: str, *, local_only: bool = False) -
     loc = (location or "").lower()
     area_match = any(t in loc for t in tokens)
     if local_only:
-        return area_match
+        # National employer: only a genuine local office — a remote posting that
+        # merely names the area (e.g. "Remote - Colorado") is still remote → out.
+        return area_match and not is_remote
     return is_remote or area_match
 
 

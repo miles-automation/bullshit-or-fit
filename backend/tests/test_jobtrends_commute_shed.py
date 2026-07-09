@@ -83,6 +83,8 @@ def test_local_only_drops_national_remote() -> None:
     # national-remote roles belong on /you, not the place-based radar.
     assert role_in_shed("Fort Collins, CO", TIER_FRONT_RANGE, local_only=True) is True
     assert role_in_shed("Remote", TIER_FRONT_RANGE, local_only=True) is False
+    # A remote posting that merely names the area is still remote → excluded.
+    assert role_in_shed("Remote - Colorado", TIER_FRONT_RANGE, local_only=True) is False
     # …whereas a small/local employer (default) still keeps remote.
     assert role_in_shed("Remote", TIER_FRONT_RANGE, local_only=False) is True
 
