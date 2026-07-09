@@ -15,6 +15,15 @@ from app.jobtrends.models import CommuteShedEmployer
 # ---- id namespacing: parallel streams never collide ---------------------
 
 
+def test_commute_shed_is_not_a_public_source() -> None:
+    # The private local stream must never be in the public-dashboard allowlist,
+    # or it would surface (unlabeled) in the national /trends derived reports.
+    from app.jobtrends.ats import PUBLIC_ATS_SOURCES
+    from app.jobtrends.commute_shed import SOURCE_COMMUTE_SHED
+
+    assert SOURCE_COMMUTE_SHED not in PUBLIC_ATS_SOURCES
+
+
 def test_id_namespace_isolates_commute_shed_from_national_ats() -> None:
     from app.jobtrends.ats import SOURCE_ATS, ParsedJob
     from app.jobtrends.commute_shed import SOURCE_COMMUTE_SHED

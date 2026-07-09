@@ -21,6 +21,7 @@ from statistics import median
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
+from app.jobtrends.ats import PUBLIC_ATS_SOURCES
 from app.jobtrends.extract import compile_taxonomy, match_keywords
 from app.jobtrends.models import (
     STREAM_HIRING,
@@ -64,6 +65,7 @@ def extract_skill_comp(session: Session) -> dict[str, int]:
             AtsJob.comp_max,
         ).where(
             AtsJob.is_open.is_(True),
+            AtsJob.source.in_(PUBLIC_ATS_SOURCES),
             AtsJob.comp_currency == "USD",
             AtsJob.comp_min.is_not(None),
         )

@@ -41,6 +41,13 @@ SOURCE_ATS = "ats"
 SOURCE_REMOTE = "remote_board"
 SOURCE_USAJOBS = "usajobs"
 
+# Sources that belong to the PUBLIC national /trends dashboard. Private/local
+# streams (e.g. the commute-shed radar's 'commute_shed') are intentionally
+# excluded here so the shared derived rebuild never surfaces them in the public
+# geo / skill-demand / comp reports. New private sources are excluded by default
+# (allowlist, not denylist).
+PUBLIC_ATS_SOURCES = (SOURCE_ATS, SOURCE_REMOTE, SOURCE_USAJOBS)
+
 
 @dataclass(frozen=True)
 class Company:

@@ -29,7 +29,7 @@ import logging
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -388,6 +388,18 @@ def sync_registry(session: Session) -> int:
         },
     )
     session.execute(stmt)
+    # The seed is the source of truth: any row whose token was dropped from (or
+    # renamed in) SEED_EMPLOYERS is deactivated so it stops showing on /local.
+    # Soft-deactivate (not delete) to keep any accrued history intact.
+    seed_tokens = [e.token for e in SEED_EMPLOYERS]
+    session.execute(
+        update(CommuteShedEmployer)
+        .where(
+            CommuteShedEmployer.token.not_in(seed_tokens),
+            CommuteShedEmployer.active.is_(True),
+        )
+        .values(active=False)
+    )
     session.commit()
     logger.info("jobtrends: commute-shed registry synced — %s employers", len(rows))
     return len(rows)

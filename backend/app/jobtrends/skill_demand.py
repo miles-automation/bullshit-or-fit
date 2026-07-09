@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
+from app.jobtrends.ats import PUBLIC_ATS_SOURCES
 from app.jobtrends.extract import compile_taxonomy, match_keywords
 from app.jobtrends.models import AtsJob, KeywordSourceDemand
 from app.jobtrends.taxonomy import keyword_category
@@ -34,7 +35,7 @@ def extract_skill_demand(session: Session) -> dict[str, int]:
 
     for source, title, content in session.execute(
         select(AtsJob.source, AtsJob.title, AtsJob.content_text).where(
-            AtsJob.is_open.is_(True)
+            AtsJob.is_open.is_(True), AtsJob.source.in_(PUBLIC_ATS_SOURCES)
         )
     ).yield_per(1000):
         totals[source] += 1
