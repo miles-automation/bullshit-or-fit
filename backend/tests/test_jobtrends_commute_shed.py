@@ -12,6 +12,35 @@ from app.jobtrends.commute_shed import (
 from app.jobtrends.models import CommuteShedEmployer
 
 
+# ---- id namespacing: parallel streams never collide ---------------------
+
+
+def test_id_namespace_isolates_commute_shed_from_national_ats() -> None:
+    from app.jobtrends.ats import SOURCE_ATS, ParsedJob
+    from app.jobtrends.commute_shed import SOURCE_COMMUTE_SHED
+
+    common = dict(
+        provider="greenhouse",
+        company_token="shared",
+        company_name="Shared Co",
+        external_id="123",
+        title="SWE",
+        location="Remote",
+        department=None,
+        url=None,
+        content_text="",
+        posted_at=None,
+    )
+    national = ParsedJob(**common, source=SOURCE_ATS)
+    local = ParsedJob(
+        **common, source=SOURCE_COMMUTE_SHED, id_namespace=SOURCE_COMMUTE_SHED
+    )
+    # Same physical role in both streams → distinct primary keys, no upsert fight.
+    assert national.id == "greenhouse:shared:123"
+    assert local.id == "commute_shed:greenhouse:shared:123"
+    assert national.id != local.id
+
+
 # ---- role_in_shed: the flood-guard --------------------------------------
 
 

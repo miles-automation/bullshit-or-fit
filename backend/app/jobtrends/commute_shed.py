@@ -411,9 +411,12 @@ def commute_shed_snapshot(session: Session, client: AtsClient) -> dict[str, int]
         except Exception:  # noqa: BLE001 — one board must not sink the snapshot
             logger.exception("jobtrends: commute-shed fetch failed for %s", e.ats_token)
             continue
-        # Flood-guard + source retag. Keep only roles actually in reach.
+        # Flood-guard + source retag. Keep only roles actually in reach. The
+        # id_namespace gives these rows a distinct primary key from the national
+        # 'ats' set, so a company present in BOTH streams gets one row per stream
+        # (upsert never updates `source`) instead of colliding.
         kept = [
-            replace(j, source=SOURCE_COMMUTE_SHED)
+            replace(j, source=SOURCE_COMMUTE_SHED, id_namespace=SOURCE_COMMUTE_SHED)
             for j in jobs
             if role_in_shed(j.location, e.tier)
         ]

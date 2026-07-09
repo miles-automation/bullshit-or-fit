@@ -131,6 +131,12 @@ class ParsedJob:
     content_text: str
     posted_at: datetime | None
     source: str = SOURCE_ATS
+    # When set, prefixes the row `id` so a parallel stream that reuses the same
+    # (provider, token, external_id) — e.g. the commute-shed radar re-snapshotting a
+    # company that's also in the national ATS set — gets its OWN row instead of
+    # colliding on the shared primary key (upsert never updates `source`). Left None
+    # for the national streams so their existing prod ids are untouched.
+    id_namespace: str | None = None
     # Optional per-role comp, annualized in `comp_currency`. `comp_kind` is
     # 'structured' (a real pay field) or 'parsed' (free-text heuristic).
     comp_min: int | None = None
@@ -141,7 +147,8 @@ class ParsedJob:
 
     @property
     def id(self) -> str:
-        return f"{self.provider}:{self.company_token}:{self.external_id}"
+        base = f"{self.provider}:{self.company_token}:{self.external_id}"
+        return f"{self.id_namespace}:{base}" if self.id_namespace else base
 
 
 def _strip_html(raw: str | None) -> str:
@@ -488,9 +495,14 @@ def ats_snapshot(
             logger.exception("jobtrends: ATS fetch failed for %s", company.token)
             continue
         upsert_jobs(session, jobs, run_at)
-        # Roles this company no longer lists → closed.
+        # Roles this company no longer lists → closed. Scoped to source='ats' so a
+        # shared token in another stream (e.g. commute_shed) can't be closed here.
         close_missing(
-            session, run_at, provider=company.provider, company_token=company.token
+            session,
+            run_at,
+            provider=company.provider,
+            company_token=company.token,
+            source=SOURCE_ATS,
         )
         session.commit()
         ok += 1
