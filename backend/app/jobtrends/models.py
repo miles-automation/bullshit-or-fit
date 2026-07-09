@@ -244,6 +244,50 @@ class AtsJob(Base):
     comp_kind: Mapped[str | None] = mapped_column(Text)
 
 
+class CommuteShedEmployer(Base):
+    """Reference: a single employer reachable from a home base (Laramie, WY).
+
+    The commute-shed radar's spine — a curated map of *who's around*, tiered by
+    reachability (`tier`): 'laramie' (onsite in town), 'cheyenne' (~50 mi),
+    'front_range' (~1–1.5 hr, NoCo/CO) and 'wy_remote' (WY-domiciled, remote-first).
+
+    Reference data, not derived: seeded from `commute_shed.SEED_EMPLOYERS` and
+    upserted each tick, so curating the code list is the source of truth. Every row
+    carries a `careers_url` (the warm link where we have no machine feed) and,
+    where a public board exists, a (`provider`, `ats_token`) that the snapshot pulls
+    live into `ats_jobs` (source='commute_shed'). Live open-role counts are joined
+    back by `ats_token`, so the map is complete day one — counts where we have a
+    feed, a link + note everywhere else.
+    """
+
+    __tablename__ = "commute_shed_employer"
+    __table_args__ = {"schema": SCHEMA}
+
+    token: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    tier: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    hq_city: Mapped[str | None] = mapped_column(Text)
+    hq_state: Mapped[str | None] = mapped_column(Text)
+    # Rough driving miles from Laramie, WY (0 = in town). Directional, for sorting.
+    distance_mi: Mapped[int | None] = mapped_column(Integer)
+    # Machine feed, when one exists: provider is greenhouse/lever/ashby, ats_token
+    # the board slug. Null => map-only (careers_url + notes carry it).
+    provider: Mapped[str | None] = mapped_column(Text)
+    ats_token: Mapped[str | None] = mapped_column(Text)
+    careers_url: Mapped[str] = mapped_column(Text, nullable=False)
+    engineer_relevant: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class KeywordSourceDemand(Base):
     """Derived: keyword presence across CURRENTLY-OPEN continuous-board roles,
     per source. Rebuilt from `ats_jobs` (title + content_text) via the taxonomy.

@@ -41,6 +41,13 @@ SOURCE_ATS = "ats"
 SOURCE_REMOTE = "remote_board"
 SOURCE_USAJOBS = "usajobs"
 
+# Sources that belong to the PUBLIC national /trends dashboard. Private/local
+# streams (e.g. the commute-shed radar's 'commute_shed') are intentionally
+# excluded here so the shared derived rebuild never surfaces them in the public
+# geo / skill-demand / comp reports. New private sources are excluded by default
+# (allowlist, not denylist).
+PUBLIC_ATS_SOURCES = (SOURCE_ATS, SOURCE_REMOTE, SOURCE_USAJOBS)
+
 
 @dataclass(frozen=True)
 class Company:
@@ -131,6 +138,12 @@ class ParsedJob:
     content_text: str
     posted_at: datetime | None
     source: str = SOURCE_ATS
+    # When set, prefixes the row `id` so a parallel stream that reuses the same
+    # (provider, token, external_id) — e.g. the commute-shed radar re-snapshotting a
+    # company that's also in the national ATS set — gets its OWN row instead of
+    # colliding on the shared primary key (upsert never updates `source`). Left None
+    # for the national streams so their existing prod ids are untouched.
+    id_namespace: str | None = None
     # Optional per-role comp, annualized in `comp_currency`. `comp_kind` is
     # 'structured' (a real pay field) or 'parsed' (free-text heuristic).
     comp_min: int | None = None
@@ -141,7 +154,8 @@ class ParsedJob:
 
     @property
     def id(self) -> str:
-        return f"{self.provider}:{self.company_token}:{self.external_id}"
+        base = f"{self.provider}:{self.company_token}:{self.external_id}"
+        return f"{self.id_namespace}:{base}" if self.id_namespace else base
 
 
 def _strip_html(raw: str | None) -> str:
@@ -452,9 +466,13 @@ def close_missing(
     *,
     provider: str,
     company_token: str | None = None,
+    source: str | None = None,
 ) -> None:
     """Flip roles not seen in this run to closed, within a provider (optionally a
-    single company). Everything fetched this run has last_seen == run_at."""
+    single company, and optionally a single `source`). Everything fetched this run
+    has last_seen == run_at. The `source` filter keeps parallel snapshot streams
+    that share a provider — e.g. the national 'ats' set and the local
+    'commute_shed' set — from closing each other's rows."""
     conditions = [
         AtsJob.provider == provider,
         AtsJob.last_seen < run_at,
@@ -462,6 +480,8 @@ def close_missing(
     ]
     if company_token is not None:
         conditions.append(AtsJob.company_token == company_token)
+    if source is not None:
+        conditions.append(AtsJob.source == source)
     session.execute(update(AtsJob).where(*conditions).values(is_open=False))
 
 
@@ -482,9 +502,14 @@ def ats_snapshot(
             logger.exception("jobtrends: ATS fetch failed for %s", company.token)
             continue
         upsert_jobs(session, jobs, run_at)
-        # Roles this company no longer lists → closed.
+        # Roles this company no longer lists → closed. Scoped to source='ats' so a
+        # shared token in another stream (e.g. commute_shed) can't be closed here.
         close_missing(
-            session, run_at, provider=company.provider, company_token=company.token
+            session,
+            run_at,
+            provider=company.provider,
+            company_token=company.token,
+            source=SOURCE_ATS,
         )
         session.commit()
         ok += 1

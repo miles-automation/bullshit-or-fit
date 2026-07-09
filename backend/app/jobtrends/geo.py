@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from app.jobtrends.ats import SOURCE_REMOTE
+from app.jobtrends.ats import PUBLIC_ATS_SOURCES, SOURCE_REMOTE
 from app.jobtrends.models import AtsJob, LocationStat
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,9 @@ def extract_geo(session: Session) -> dict[str, int]:
     remote: dict[tuple[str, str], int] = defaultdict(int)
 
     for source, location in session.execute(
-        select(AtsJob.source, AtsJob.location).where(AtsJob.is_open.is_(True))
+        select(AtsJob.source, AtsJob.location).where(
+            AtsJob.is_open.is_(True), AtsJob.source.in_(PUBLIC_ATS_SOURCES)
+        )
     ).yield_per(1000):
         # Remote-board feeds are remote by definition — their location field is the
         # candidate's *eligible region*, not an office — so parsing it for a remote

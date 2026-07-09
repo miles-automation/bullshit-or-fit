@@ -347,6 +347,47 @@ export interface KeywordOption {
   category: string;
 }
 
+export interface ShedRole {
+  company: string;
+  title: string;
+  location: string | null;
+  url: string | null;
+  comp_min: number | null;
+  comp_max: number | null;
+  is_new: boolean;
+}
+
+export interface ShedEmployer {
+  token: string;
+  name: string;
+  category: string;
+  hq_city: string | null;
+  hq_state: string | null;
+  distance_mi: number | null;
+  careers_url: string;
+  notes: string | null;
+  has_feed: boolean;
+  open_roles: number | null;
+  new_roles: number;
+}
+
+export interface ShedTier {
+  tier: string;
+  label: string;
+  open_roles: number;
+  employers: ShedEmployer[];
+}
+
+export interface CommuteShedResponse {
+  home: string;
+  total_employers: number;
+  total_open_roles: number;
+  new_roles: number;
+  trajectory_days: number;
+  tiers: ShedTier[];
+  roles: ShedRole[];
+}
+
 export const fetchSummary = () =>
   apiFetch<JobtrendsSummary>("/api/v1/jobtrends/summary");
 
@@ -396,6 +437,9 @@ export const fetchLayoffs = () =>
 
 export const fetchWages = (area: string) =>
   apiFetch<WagesResponse>(`/api/v1/jobtrends/wages?area=${encodeURIComponent(area)}`);
+
+export const fetchLocal = () =>
+  apiFetch<CommuteShedResponse>("/api/v1/jobtrends/local");
 
 export const fetchMarketFit = (
   skills: string[],

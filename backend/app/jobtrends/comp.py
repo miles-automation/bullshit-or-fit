@@ -25,6 +25,7 @@ from typing import Any
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
+from app.jobtrends.ats import PUBLIC_ATS_SOURCES
 from app.jobtrends.models import (
     STREAM_HIRING,
     AtsJob,
@@ -382,13 +383,14 @@ def extract_comp_sources(session: Session) -> dict[str, int]:
     # midpoint of the annualized range on each row that has one.
     for source, total in session.execute(
         select(AtsJob.source, func.count())
-        .where(AtsJob.is_open.is_(True))
+        .where(AtsJob.is_open.is_(True), AtsJob.source.in_(PUBLIC_ATS_SOURCES))
         .group_by(AtsJob.source)
     ).all():
         stats[source] = (int(total), [])
     for source, lo, hi in session.execute(
         select(AtsJob.source, AtsJob.comp_min, AtsJob.comp_max).where(
             AtsJob.is_open.is_(True),
+            AtsJob.source.in_(PUBLIC_ATS_SOURCES),
             AtsJob.comp_currency == "USD",
             AtsJob.comp_min.is_not(None),
         )

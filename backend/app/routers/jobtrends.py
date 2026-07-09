@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.jobtrends.ats import ats_report
+from app.jobtrends.commute_shed import commute_shed_report
 from app.jobtrends.company_pay import company_pay
 from app.jobtrends.comp import comp_sources, comp_trend
 from app.jobtrends.extract import latest_computed_at
@@ -282,6 +283,47 @@ class MarketFitOut(BaseModel):
     gaps: list[SkillSignalOut]
     matching_roles: int
     top_roles: list[RoleMatchOut]
+
+
+class ShedRoleOut(BaseModel):
+    company: str
+    title: str
+    location: str | None
+    url: str | None
+    comp_min: int | None
+    comp_max: int | None
+    is_new: bool
+
+
+class ShedEmployerOut(BaseModel):
+    token: str
+    name: str
+    category: str
+    hq_city: str | None
+    hq_state: str | None
+    distance_mi: int | None
+    careers_url: str
+    notes: str | None
+    has_feed: bool
+    open_roles: int | None
+    new_roles: int
+
+
+class ShedTierOut(BaseModel):
+    tier: str
+    label: str
+    open_roles: int
+    employers: list[ShedEmployerOut]
+
+
+class CommuteShedOut(BaseModel):
+    home: str
+    total_employers: int
+    total_open_roles: int
+    new_roles: int
+    trajectory_days: int
+    tiers: list[ShedTierOut]
+    roles: list[ShedRoleOut]
 
 
 class SummaryOut(BaseModel):
@@ -625,6 +667,31 @@ def get_market_fit(
         gaps=[SkillSignalOut(**g.__dict__) for g in r.gaps],
         matching_roles=r.matching_roles,
         top_roles=[RoleMatchOut(**t.__dict__) for t in r.top_roles],
+    )
+
+
+@router.get("/local", response_model=CommuteShedOut)
+def get_local(db: Session = Depends(get_db)) -> CommuteShedOut:
+    """Commute-shed radar: the curated map of employers reachable from Laramie,
+    grouped by reachability tier, with live open-role counts (+ a 'just posted'
+    trajectory seed) where a machine feed exists and warm links everywhere else."""
+    r = commute_shed_report(db)
+    return CommuteShedOut(
+        home=r.home,
+        total_employers=r.total_employers,
+        total_open_roles=r.total_open_roles,
+        new_roles=r.new_roles,
+        trajectory_days=r.trajectory_days,
+        tiers=[
+            ShedTierOut(
+                tier=t.tier,
+                label=t.label,
+                open_roles=t.open_roles,
+                employers=[ShedEmployerOut(**e.__dict__) for e in t.employers],
+            )
+            for t in r.tiers
+        ],
+        roles=[ShedRoleOut(**role.__dict__) for role in r.roles],
     )
 
 
