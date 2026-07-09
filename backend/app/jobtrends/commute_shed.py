@@ -41,6 +41,7 @@ from app.jobtrends.ats import (
 )
 from app.jobtrends.geo import classify_location
 from app.jobtrends.models import AtsJob, CommuteShedEmployer
+from app.jobtrends.workday import PROVIDER_WORKDAY, WorkdayClient, WorkdayConfig
 
 logger = logging.getLogger(__name__)
 
@@ -93,17 +94,20 @@ class ShedEmployer:
     hq_city: str | None = None
     hq_state: str | None = None
     distance_mi: int | None = None
-    provider: str | None = None  # greenhouse | lever | ashby, when a feed exists
+    provider: str | None = None  # greenhouse | lever | ashby | workday, if a feed
     ats_token: str | None = None
+    # Workday employers set provider='workday' + this config; ats_token is reused as
+    # the row/join token (the CXS API needs tenant/host/site, not a board slug).
+    workday: WorkdayConfig | None = None
     engineer_relevant: bool = True
     notes: str | None = None
 
 
 # --- The curated map -------------------------------------------------------
-# Real employers reachable from Laramie, WY. Feeds verified live 2026-07-08:
-# only Ursa Major (Greenhouse) currently exposes a machine board; the rest are
-# Workday/Taleo/iCIMS or private, so they're map-only (careers_url + notes) until
-# a token is discovered. Add rows freely — the sync picks them up next tick.
+# Real employers reachable from Laramie, WY. Live feeds verified 2026-07-09:
+# Ursa Major (Greenhouse), JumpCloud (Lever), and Broadcom + HPE (Workday CXS,
+# Fort-Collins-filtered). The rest are Taleo/iCIMS/private, so they're map-only
+# (careers_url + notes) until a feed is found. Add rows freely — sync picks them up.
 SEED_EMPLOYERS: list[ShedEmployer] = [
     # --- Laramie (in town) ---
     ShedEmployer(
@@ -227,11 +231,16 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Fort Collins",
         hq_state="CO",
         distance_mi=65,
+        provider=PROVIDER_WORKDAY,
+        ats_token="broadcom-fort-collins",
+        workday=WorkdayConfig(
+            tenant="broadcom", host="wd1", site="External_Career", search="Fort Collins"
+        ),
         careers_url="https://www.broadcom.com/company/careers/search",
         notes=(
             "Custom-silicon design center. Hiring an AI Software Engineer to wire "
             "AI agents into the chip-design flow — a direct map to LLM-infra work. "
-            "Workday board; hybrid ~2 days/wk."
+            "Live Workday feed (Fort Collins–filtered); hybrid ~2 days/wk."
         ),
     ),
     ShedEmployer(
@@ -242,8 +251,16 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Fort Collins",
         hq_state="CO",
         distance_mi=65,
+        provider=PROVIDER_WORKDAY,
+        ats_token="hpe-fort-collins",
+        workday=WorkdayConfig(
+            tenant="hpe", host="wd5", site="Jobsathpe", search="Fort Collins"
+        ),
         careers_url="https://careers.hpe.com/us/en/search-results?keywords=Fort%20Collins",
-        notes="Large Fort Collins R&D site — systems/firmware/cloud SWE. Workday.",
+        notes=(
+            "Large Fort Collins R&D site — systems/firmware/cloud/HPC SWE. "
+            "Live Workday feed (Fort Collins–filtered)."
+        ),
     ),
     ShedEmployer(
         token="advanced-energy",
@@ -255,6 +272,22 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         distance_mi=65,
         careers_url="https://careers.advancedenergy.com/",
         notes="Fort Collins-HQ power-conversion hardware co; embedded/controls SWE.",
+    ),
+    ShedEmployer(
+        token="jumpcloud",
+        name="JumpCloud",
+        tier=TIER_FRONT_RANGE,
+        category="startup",
+        hq_city="Louisville",
+        hq_state="CO",
+        distance_mi=100,
+        provider="lever",
+        ats_token="jumpcloud",
+        careers_url="https://jobs.lever.co/jumpcloud",
+        notes=(
+            "Cloud directory / IAM platform, Louisville CO (~1.5 hr, front-range "
+            "edge). Remote-friendly. Live Lever feed."
+        ),
     ),
     ShedEmployer(
         token="numerica",
@@ -405,21 +438,36 @@ def sync_registry(session: Session) -> int:
     return len(rows)
 
 
-def commute_shed_snapshot(session: Session, client: AtsClient) -> dict[str, int]:
+def commute_shed_snapshot(
+    session: Session,
+    client: AtsClient,
+    workday_client: WorkdayClient | None = None,
+) -> dict[str, int]:
     """Snapshot the live-feed subset of the registry into ats_jobs.
 
-    For each seed employer that has a (provider, ats_token), fetch its board, keep
-    only in-reach roles (`role_in_shed`), stamp source='commute_shed', upsert, then
-    close anything that employer no longer lists *within this source*. One bad board
-    is logged and skipped. Returns {employers_ok, open_roles}.
+    For each seed employer that has a feed, fetch it (Greenhouse/Lever/Ashby via the
+    token board; Workday via the CXS API), keep only in-reach roles (`role_in_shed`),
+    stamp source='commute_shed', upsert, then close anything that employer no longer
+    lists *within this source*. One bad board is logged and skipped. Returns
+    {employers_ok, open_roles}.
     """
+    workday_client = workday_client or WorkdayClient()
     run_at = datetime.now(tz=UTC)
     feeds = [e for e in SEED_EMPLOYERS if e.provider and e.ats_token]
     ok = 0
     for e in feeds:
-        company = Company(name=e.name, provider=e.provider, token=e.ats_token)  # type: ignore[arg-type]
         try:
-            jobs = client.fetch_company(company)
+            if e.provider == PROVIDER_WORKDAY:
+                if e.workday is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is workday but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = workday_client.fetch(e.ats_token, e.name, e.workday)  # type: ignore[arg-type]
+            else:
+                company = Company(name=e.name, provider=e.provider, token=e.ats_token)  # type: ignore[arg-type]
+                jobs = client.fetch_company(company)
         except Exception:  # noqa: BLE001 — one board must not sink the snapshot
             logger.exception("jobtrends: commute-shed fetch failed for %s", e.ats_token)
             continue
