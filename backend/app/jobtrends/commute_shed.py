@@ -81,6 +81,12 @@ _TIER_AREA_TOKENS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Broad state/region tokens that match a whole state, not a commutable metro. They're
+# fine for small local employers, but under `local_only` (big national boards) they'd
+# admit far-CO postings (Colorado Springs, Denver) that aren't the local office, so
+# local_only matches only the specific-metro tokens.
+_BROAD_AREA_TOKENS = frozenset({"colorado"})
+
 
 @dataclass(frozen=True)
 class ShedEmployer:
@@ -99,15 +105,20 @@ class ShedEmployer:
     # Workday employers set provider='workday' + this config; ats_token is reused as
     # the row/join token (the CXS API needs tenant/host/site, not a board slug).
     workday: WorkdayConfig | None = None
+    # Big national employers: keep only their local-office roles (drop national-remote
+    # ones, which belong on /you, not this place-based radar).
+    local_only: bool = False
     engineer_relevant: bool = True
     notes: str | None = None
 
 
 # --- The curated map -------------------------------------------------------
 # Real employers reachable from Laramie, WY. Live feeds verified 2026-07-09:
-# Ursa Major (Greenhouse), JumpCloud (Lever), and Broadcom + HPE (Workday CXS,
-# Fort-Collins-filtered). The rest are Taleo/iCIMS/private, so they're map-only
-# (careers_url + notes) until a feed is found. Add rows freely — sync picks them up.
+# Ursa Major + Anduril/ex-Numerica (Greenhouse), JumpCloud (Lever), and Broadcom +
+# HPE (Workday CXS, Fort-Collins-filtered). The rest are Taleo/iCIMS/private, so
+# they're map-only (careers_url + notes) until a feed is found. Watch for
+# acquisitions (Teton→Markforged, Numerica→Anduril) staling careers URLs. Add rows
+# freely — sync picks them up; a token dropped here is auto-deactivated.
 SEED_EMPLOYERS: list[ShedEmployer] = [
     # --- Laramie (in town) ---
     ShedEmployer(
@@ -126,15 +137,20 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         ),
     ),
     ShedEmployer(
-        token="teton-simulation",
-        name="Teton Simulation Software",
+        token="markforged-laramie",
+        name="Markforged Simulation (ex-Teton)",
         tier=TIER_LARAMIE,
         category="startup",
         hq_city="Laramie",
         hq_state="WY",
         distance_mi=0,
-        careers_url="https://www.tetonsim.com/company/careers",
-        notes="UW-spinout; additive-manufacturing simulation (SmartSlice). Small eng team.",
+        careers_url="https://markforged.com/about/careers",
+        notes=(
+            "The former Teton Simulation (SmartSlice; UW IMPACT 307 spinout), "
+            "acquired by Markforged in 2022 — the Laramie team stayed on in the "
+            "incubator. ⚠ Verify still active: Markforged was taken private by Nano "
+            "Dimension in 2025 and is small; the local team may have thinned."
+        ),
     ),
     ShedEmployer(
         token="trihydro",
@@ -236,7 +252,7 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         workday=WorkdayConfig(
             tenant="broadcom", host="wd1", site="External_Career", search="Fort Collins"
         ),
-        careers_url="https://www.broadcom.com/company/careers/search",
+        careers_url="https://www.broadcom.com/company/careers",
         notes=(
             "Custom-silicon design center. Hiring an AI Software Engineer to wire "
             "AI agents into the chip-design flow — a direct map to LLM-infra work. "
@@ -270,7 +286,7 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Fort Collins",
         hq_state="CO",
         distance_mi=65,
-        careers_url="https://careers.advancedenergy.com/",
+        careers_url="https://jobs.advanced-energy.com/",
         notes="Fort Collins-HQ power-conversion hardware co; embedded/controls SWE.",
     ),
     ShedEmployer(
@@ -290,17 +306,24 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         ),
     ),
     ShedEmployer(
-        token="numerica",
-        name="Numerica Corporation",
+        token="anduril-fort-collins",
+        name="Anduril (ex-Numerica, Fort Collins)",
         tier=TIER_FRONT_RANGE,
         category="defense",
         hq_city="Fort Collins",
         hq_state="CO",
         distance_mi=65,
-        careers_url="https://www.numerica.us/careers/",
+        provider="greenhouse",
+        ats_token="andurilindustries",
+        local_only=True,  # huge national board — keep only the Fort Collins office
+        careers_url="https://www.anduril.com/careers",
         notes=(
-            "Defense sensor-fusion / tracking algorithms — heavy math + C++/Python. "
-            "Clearance common. A serious-engineering shop an hour away."
+            "Anduril acquired Numerica's radar + C2 business (Jan 2025) — ~100+ "
+            "engineers in Fort Collins doing sensor-fusion / tracking / signal "
+            "processing (C++/Python). Hot, deeply-funded defense-tech; live "
+            "Greenhouse feed pinned to the Fort Collins / NoCo office roles (the "
+            "ex-Numerica team; far-CO + national-remote roles show on /you, not "
+            "here). Clearance common."
         ),
     ),
     ShedEmployer(
@@ -356,22 +379,31 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
 ]
 
 
-def role_in_shed(location: str | None, tier: str) -> bool:
+def role_in_shed(location: str | None, tier: str, *, local_only: bool = False) -> bool:
     """Is a role at a `tier` employer actually in reach?
 
     Physical-office tiers keep a role only if its location matches the tier's area
     tokens OR the role is remote. WY-remote employers are small and aligned, so
     every role passes. This is the flood-guard that stops a big employer's global
     req list from swamping the radar.
+
+    `local_only` is for BIG NATIONAL employers (e.g. Anduril): their national-remote
+    roles aren't "commute-shed" — they're just remote, better surfaced on /you — so
+    only their actual local-office roles (area-token match) count here. Small/local
+    employers leave it False so their remote roles still qualify.
     """
     if tier == TIER_WY_REMOTE:
         return True
     _, is_remote = classify_location(location)
-    if is_remote:
-        return True
     tokens = _TIER_AREA_TOKENS.get(tier, ())
     loc = (location or "").lower()
-    return any(t in loc for t in tokens)
+    if local_only:
+        # National employer → only a genuine local office: match the specific-metro
+        # tokens (not the broad state catch-all, which would admit Denver/Colo
+        # Springs) AND exclude anything remote (even "Remote - Colorado").
+        office_tokens = (t for t in tokens if t not in _BROAD_AREA_TOKENS)
+        return not is_remote and any(t in loc for t in office_tokens)
+    return is_remote or any(t in loc for t in tokens)
 
 
 def sync_registry(session: Session) -> int:
@@ -487,7 +519,7 @@ def commute_shed_snapshot(
         kept = [
             replace(j, source=SOURCE_COMMUTE_SHED, id_namespace=SOURCE_COMMUTE_SHED)
             for j in jobs
-            if role_in_shed(j.location, e.tier)
+            if role_in_shed(j.location, e.tier, local_only=e.local_only)
         ]
         upsert_jobs(session, kept, run_at)
         close_missing(
