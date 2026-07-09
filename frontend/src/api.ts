@@ -369,6 +369,16 @@ export interface ShedEmployer {
   has_feed: boolean;
   open_roles: number | null;
   new_roles: number;
+  opened_30d: number;
+  net_30d: number | null;
+}
+
+export interface ShedMover {
+  token: string;
+  name: string;
+  opened_30d: number;
+  net_30d: number | null;
+  open_roles: number;
 }
 
 export interface ShedTier {
@@ -385,6 +395,7 @@ export interface CommuteShedResponse {
   new_roles: number;
   trajectory_days: number;
   tiers: ShedTier[];
+  movers: ShedMover[];
   roles: ShedRole[];
 }
 

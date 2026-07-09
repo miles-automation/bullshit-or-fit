@@ -40,7 +40,7 @@ from app.jobtrends.ats import (
     upsert_jobs,
 )
 from app.jobtrends.geo import classify_location
-from app.jobtrends.models import AtsJob, CommuteShedEmployer
+from app.jobtrends.models import AtsJob, CommuteShedEmployer, CommuteShedStat
 from app.jobtrends.workday import PROVIDER_WORKDAY, WorkdayClient, WorkdayConfig
 
 logger = logging.getLogger(__name__)
@@ -526,6 +526,56 @@ def commute_shed_snapshot(
     return {"employers_ok": ok, "open_roles": int(open_roles or 0)}
 
 
+def record_daily_stats(session: Session) -> int:
+    """Snapshot today's per-employer open-role count into commute_shed_stat.
+
+    Called once per tick after the snapshot. Upserts on (captured_on, token) so
+    repeated ticks in a day just refresh the count; the accumulating daily series is
+    what powers real "heating up / cooling" trajectory over weeks. Returns rows
+    written. Records only currently-active feed tokens.
+    """
+    today = datetime.now(tz=UTC).date()
+    active_tokens = (
+        session.execute(
+            select(CommuteShedEmployer.ats_token).where(
+                CommuteShedEmployer.active.is_(True),
+                CommuteShedEmployer.ats_token.is_not(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    counts = {
+        token: int(n)
+        for token, n in session.execute(
+            select(AtsJob.company_token, func.count())
+            .where(
+                AtsJob.is_open.is_(True),
+                AtsJob.source == SOURCE_COMMUTE_SHED,
+                AtsJob.company_token.in_(active_tokens),
+            )
+            .group_by(AtsJob.company_token)
+        ).all()
+    }
+    if not active_tokens:
+        return 0
+    rows = [
+        {"captured_on": today, "token": t, "open_roles": counts.get(t, 0)}
+        for t in active_tokens
+    ]
+    stmt = pg_insert(CommuteShedStat).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[CommuteShedStat.captured_on, CommuteShedStat.token],
+        set_={"open_roles": stmt.excluded.open_roles},
+    )
+    session.execute(stmt)
+    session.commit()
+    logger.info(
+        "jobtrends: commute-shed daily stats recorded — %s employers", len(rows)
+    )
+    return len(rows)
+
+
 # --- Report ---------------------------------------------------------------
 
 
@@ -552,7 +602,19 @@ class ShedEmployerOut:
     notes: str | None
     has_feed: bool
     open_roles: int | None  # live count when we have a feed, else None (map-only)
-    new_roles: int  # opened within the trajectory window (0 if no feed)
+    new_roles: int  # opened in the trajectory window (7d); 0 if no feed
+    opened_30d: int  # opened in the last 30d (the momentum signal)
+    # net change vs ~30 days ago from the recorded history; None until history exists.
+    net_30d: int | None
+
+
+@dataclass(frozen=True)
+class Mover:
+    token: str
+    name: str
+    opened_30d: int
+    net_30d: int | None
+    open_roles: int
 
 
 @dataclass(frozen=True)
@@ -570,6 +632,7 @@ class CommuteShedReport:
     total_employers: int
     total_open_roles: int  # live commute-shed openings
     new_roles: int  # opened within the trajectory window
+    movers: list[Mover]  # employers heating up (most opened in last 30d)
     roles: list[ShedRole]  # the concrete open local openings
     trajectory_days: int
 
@@ -583,7 +646,9 @@ def commute_shed_report(
     rows tagged source='commute_shed', joined to the registry by ats_token. Map-only
     employers (no feed) report `open_roles=None` — a link, not a zero.
     """
-    since = datetime.now(tz=UTC) - timedelta(days=trajectory_days)
+    now = datetime.now(tz=UTC)
+    since = now - timedelta(days=trajectory_days)
+    since_30 = now - timedelta(days=30)
 
     employers = (
         session.execute(
@@ -597,13 +662,15 @@ def commute_shed_report(
     # the window before the snapshot's orphan-close runs.
     active_feed_tokens = [e.ats_token for e in employers if e.provider and e.ats_token]
 
-    # Live counts per feed token: total open + how many opened in the window.
-    counts: dict[str, tuple[int, int]] = {}
-    for token, total, fresh in session.execute(
+    # Live counts per feed token: total open + opened in the 7d and 30d windows
+    # (velocity from ats_jobs.first_seen — works immediately, no history needed).
+    counts: dict[str, tuple[int, int, int]] = {}
+    for token, total, o7, o30 in session.execute(
         select(
             AtsJob.company_token,
             func.count(),
             func.count().filter(AtsJob.first_seen >= since),
+            func.count().filter(AtsJob.first_seen >= since_30),
         )
         .where(
             AtsJob.is_open.is_(True),
@@ -612,12 +679,30 @@ def commute_shed_report(
         )
         .group_by(AtsJob.company_token)
     ).all():
-        counts[token] = (int(total), int(fresh or 0))
+        counts[token] = (int(total), int(o7 or 0), int(o30 or 0))
+
+    # Baseline open-count ~30d ago per token, from the recorded history: the EARLIEST
+    # captured_on within the last 30d (or the start of tracking if younger). net_30d
+    # is None until any history exists. DISTINCT ON keeps the earliest row per token.
+    baseline_30d: dict[str, int] = {}
+    if active_feed_tokens:
+        for token, open_then in session.execute(
+            select(CommuteShedStat.token, CommuteShedStat.open_roles)
+            .where(
+                CommuteShedStat.captured_on >= since_30.date(),
+                CommuteShedStat.token.in_(active_feed_tokens),
+            )
+            .distinct(CommuteShedStat.token)
+            .order_by(CommuteShedStat.token, CommuteShedStat.captured_on.asc())
+        ).all():
+            baseline_30d[token] = int(open_then)
 
     by_tier: dict[str, list[ShedEmployerOut]] = {t: [] for t in TIER_ORDER}
     for e in employers:
         has_feed = bool(e.provider and e.ats_token)
-        total, fresh = counts.get(e.ats_token or "", (0, 0))
+        total, o7, o30 = counts.get(e.ats_token or "", (0, 0, 0))
+        base = baseline_30d.get(e.ats_token or "")
+        net = (total - base) if (has_feed and base is not None) else None
         by_tier.setdefault(e.tier, []).append(
             ShedEmployerOut(
                 token=e.token,
@@ -630,7 +715,9 @@ def commute_shed_report(
                 notes=e.notes,
                 has_feed=has_feed,
                 open_roles=total if has_feed else None,
-                new_roles=fresh if has_feed else 0,
+                new_roles=o7 if has_feed else 0,
+                opened_30d=o30 if has_feed else 0,
+                net_30d=net,
             )
         )
 
@@ -688,12 +775,33 @@ def commute_shed_report(
 
     total_open = sum(t.open_roles for t in tiers)
     new_roles = sum(e.new_roles for t in tiers for e in t.employers)
+
+    # Movers: feed employers heating up, ranked by 30d opens (then net, then recent).
+    # Only employers with any momentum surface — a quiet employer isn't a mover.
+    movers = sorted(
+        (
+            Mover(
+                token=e.token,
+                name=e.name,
+                opened_30d=e.opened_30d,
+                net_30d=e.net_30d,
+                open_roles=e.open_roles or 0,
+            )
+            for t in tiers
+            for e in t.employers
+            if e.has_feed and e.opened_30d > 0
+        ),
+        key=lambda m: (m.opened_30d, m.net_30d or 0, m.open_roles),
+        reverse=True,
+    )[:6]
+
     return CommuteShedReport(
         home="Laramie, WY",
         tiers=tiers,
         total_employers=len(employers),
         total_open_roles=total_open,
         new_roles=new_roles,
+        movers=movers,
         roles=roles,
         trajectory_days=trajectory_days,
     )

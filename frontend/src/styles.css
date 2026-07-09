@@ -1606,3 +1606,68 @@ a.shed-role-title:hover {
 .mf-inline-link:hover {
   text-decoration: underline;
 }
+
+/* --- Commute-shed velocity (movers + heat chips) -------------------- */
+.shed-hot {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: rgba(240, 90, 42, 0.12);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.shed-net {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.shed-net.up {
+  color: var(--signal-mint);
+}
+.shed-net.down {
+  color: var(--accent-strong);
+}
+.shed-net.flat {
+  color: var(--ink-muted);
+}
+.shed-movers h2 {
+  display: inline-block;
+}
+.shed-mover-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.shed-mover {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.shed-mover:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.shed-mover-name {
+  font-weight: 700;
+  font-size: 14px;
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shed-mover-n {
+  font-weight: 800;
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+.shed-mover-of {
+  font-size: 12px;
+}

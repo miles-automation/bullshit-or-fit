@@ -307,6 +307,16 @@ class ShedEmployerOut(BaseModel):
     has_feed: bool
     open_roles: int | None
     new_roles: int
+    opened_30d: int
+    net_30d: int | None
+
+
+class ShedMoverOut(BaseModel):
+    token: str
+    name: str
+    opened_30d: int
+    net_30d: int | None
+    open_roles: int
 
 
 class ShedTierOut(BaseModel):
@@ -323,6 +333,7 @@ class CommuteShedOut(BaseModel):
     new_roles: int
     trajectory_days: int
     tiers: list[ShedTierOut]
+    movers: list[ShedMoverOut]
     roles: list[ShedRoleOut]
 
 
@@ -691,6 +702,7 @@ def get_local(db: Session = Depends(get_db)) -> CommuteShedOut:
             )
             for t in r.tiers
         ],
+        movers=[ShedMoverOut(**m.__dict__) for m in r.movers],
         roles=[ShedRoleOut(**role.__dict__) for role in r.roles],
     )
 
