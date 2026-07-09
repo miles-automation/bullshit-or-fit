@@ -7,12 +7,23 @@ from app.jobtrends.commute_shed import (
     TIER_LARAMIE,
     TIER_WY_REMOTE,
     commute_shed_report,
+    record_daily_stats,
     role_in_shed,
 )
 from app.jobtrends.models import CommuteShedEmployer
 
 
 # ---- id namespacing: parallel streams never collide ---------------------
+
+
+def test_record_daily_stats_noop_when_nothing_refreshed() -> None:
+    # A tick where every feed failed passes no tokens → record nothing (don't touch
+    # the DB), so an outage day can't write a stale/zero velocity baseline.
+    class _Boom:
+        def execute(self, *_a, **_k):  # noqa: ANN002, ANN003, ANN202
+            raise AssertionError("record_daily_stats must not query on empty tokens")
+
+    assert record_daily_stats(_Boom(), []) == 0  # type: ignore[arg-type]
 
 
 def test_commute_shed_is_not_a_public_source() -> None:
@@ -133,13 +144,15 @@ def _emp(token: str, tier: str, *, feed: bool, dist: int | None) -> CommuteShedE
 
 
 def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
-    # counts query: (token, total_open, opened_in_window)
-    counts = [("ursamajor", 12, 3)]
+    # counts query: (token, total_open, opened_7d, opened_30d)
+    counts = [("ursamajor", 12, 3, 5)]
     employers = [
         _emp("ursamajor", TIER_FRONT_RANGE, feed=True, dist=80),
         _emp("broadcom", TIER_FRONT_RANGE, feed=False, dist=65),
         _emp("uw", TIER_LARAMIE, feed=False, dist=0),
     ]
+    # history baseline (~30d ago): ursamajor had 8 open → net_30d = 12 - 8 = 4
+    baseline = [("ursamajor", 8)]
     roles = [
         (
             "Ursamajor",
@@ -151,8 +164,10 @@ def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
             None,
         )
     ]
-    # Query order in commute_shed_report: employers, then counts, then roles.
-    session = _SeqSession([_Result(employers), _Result(counts), _Result(roles)])
+    # Query order: employers, counts, baseline history, roles.
+    session = _SeqSession(
+        [_Result(employers), _Result(counts), _Result(baseline), _Result(roles)]
+    )
 
     r = commute_shed_report(session, trajectory_days=7)  # type: ignore[arg-type]
 
@@ -169,7 +184,14 @@ def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
     ursa = next(e for e in front.employers if e.token == "ursamajor")
     broad = next(e for e in front.employers if e.token == "broadcom")
     assert ursa.has_feed is True and ursa.open_roles == 12 and ursa.new_roles == 3
-    # Map-only employer: a link, not a zero.
+    # Velocity: 5 opened in 30d, net +4 vs the recorded baseline.
+    assert ursa.opened_30d == 5 and ursa.net_30d == 4
+    # Map-only employer: a link, not a zero, and no velocity.
     assert broad.has_feed is False and broad.open_roles is None and broad.new_roles == 0
+    assert broad.opened_30d == 0 and broad.net_30d is None
+
+    # Movers: only feed employers with 30d momentum surface.
+    assert [m.token for m in r.movers] == ["ursamajor"]
+    assert r.movers[0].opened_30d == 5 and r.movers[0].net_30d == 4
 
     assert len(r.roles) == 1 and r.roles[0].company == "Ursamajor"

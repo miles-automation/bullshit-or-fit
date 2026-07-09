@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   type CommuteShedResponse,
   type ShedEmployer,
+  type ShedMover,
   type ShedRole,
   fetchLocal,
 } from "./api";
@@ -12,6 +13,14 @@ const comp = (r: ShedRole) =>
     ? `${usd(r.comp_min)}–${usd(r.comp_max)}`
     : "—";
 const dist = (mi: number | null) => (mi == null ? "remote" : `${mi} mi`);
+
+// Net-change chip from recorded history (↑/↓/flat); null until history accrues.
+function NetChip({ net }: { net: number | null }) {
+  if (net == null) return null;
+  if (net > 0) return <span className="shed-net up">↑{net}/30d</span>;
+  if (net < 0) return <span className="shed-net down">↓{Math.abs(net)}/30d</span>;
+  return <span className="shed-net flat">flat</span>;
+}
 
 function EmployerRow({ e }: { e: ShedEmployer }) {
   const meta = [e.category, e.hq_city && `${e.hq_city}${e.hq_state ? `, ${e.hq_state}` : ""}`]
@@ -27,7 +36,12 @@ function EmployerRow({ e }: { e: ShedEmployer }) {
           {e.has_feed ? (
             <>
               <span className="shed-count">{e.open_roles} open</span>
-              {e.new_roles > 0 && <span className="shed-new">+{e.new_roles} new</span>}
+              {e.opened_30d > 0 && (
+                <span className="shed-hot" title="opened in the last 30 days">
+                  🔥 +{e.opened_30d}/30d
+                </span>
+              )}
+              <NetChip net={e.net_30d} />
             </>
           ) : (
             <span className="shed-maponly">careers ↗</span>
@@ -39,6 +53,29 @@ function EmployerRow({ e }: { e: ShedEmployer }) {
       </div>
       {e.notes && <div className="shed-emp-notes">{e.notes}</div>}
     </li>
+  );
+}
+
+function MoversStrip({ movers }: { movers: ShedMover[] }) {
+  if (!movers.length) return null;
+  return (
+    <section className="section-shell shed-movers">
+      <h2>🔥 Heating up</h2>
+      <p className="muted">
+        Employers adding roles fastest (openings in the last 30 days). This is the
+        signal — who's building — not the raw count.
+      </p>
+      <ul className="shed-mover-list">
+        {movers.map((m) => (
+          <li key={m.token} className="shed-mover">
+            <span className="shed-mover-name">{m.name}</span>
+            <span className="shed-mover-n">+{m.opened_30d}</span>
+            <span className="shed-mover-of muted">of {m.open_roles} open</span>
+            <NetChip net={m.net_30d} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -125,6 +162,8 @@ export function LocalRadarView() {
               </span>
             </div>
           </section>
+
+          <MoversStrip movers={data.movers} />
 
           {data.tiers.map((t) => (
             <section key={t.tier} className="section-shell">

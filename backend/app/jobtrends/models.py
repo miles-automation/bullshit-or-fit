@@ -288,6 +288,28 @@ class CommuteShedEmployer(Base):
     )
 
 
+class CommuteShedStat(Base):
+    """History: one row per (employer, day) recording that day's open-role count.
+
+    The commute-shed radar's velocity spine. `ats_jobs` tracks each role's
+    first_seen/last_seen, which yields "opened in the last N days" immediately; this
+    table adds a durable per-employer open-count time series so a real trajectory
+    ("open roles 30 days ago vs now", sparklines, heating/cooling) accrues from first
+    deploy forward. Upserted once per snapshot tick on (captured_on, token), so
+    multiple ticks in a day just refresh the day's count.
+    """
+
+    __tablename__ = "commute_shed_stat"
+    __table_args__ = {"schema": SCHEMA}
+
+    captured_on: Mapped[date] = mapped_column(Date, primary_key=True)
+    token: Mapped[str] = mapped_column(Text, primary_key=True)
+    open_roles: Mapped[int] = mapped_column(Integer, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class KeywordSourceDemand(Base):
     """Derived: keyword presence across CURRENTLY-OPEN continuous-board roles,
     per source. Rebuilt from `ats_jobs` (title + content_text) via the taxonomy.

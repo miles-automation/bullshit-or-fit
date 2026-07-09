@@ -107,11 +107,18 @@ def _run_once(months: int) -> None:
     # live-feed subset (source='commute_shed', filtered to in-reach roles).
     try:
         from app.jobtrends.ats import AtsClient
-        from app.jobtrends.commute_shed import commute_shed_snapshot, sync_registry
+        from app.jobtrends.commute_shed import (
+            commute_shed_snapshot,
+            record_daily_stats,
+            sync_registry,
+        )
 
         with SessionLocal() as session:
             sync_registry(session)
-            commute_shed_snapshot(session, AtsClient())
+            shed_result = commute_shed_snapshot(session, AtsClient())
+            # Record velocity history for ONLY the feeds that refreshed this run —
+            # a failed fetch must not write a stale count into the 30d baseline.
+            record_daily_stats(session, list(shed_result.refreshed_tokens))
     except Exception:  # noqa: BLE001
         logger.exception(
             "jobtrends: commute-shed snapshot failed; will retry next interval"

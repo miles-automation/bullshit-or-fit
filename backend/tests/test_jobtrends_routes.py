@@ -176,6 +176,7 @@ def test_local_route_empty_ok() -> None:
     assert body["home"] == "Laramie, WY"
     assert body["total_employers"] == 0  # empty DB → registry not yet synced
     assert body["tiers"] == []
+    assert body["movers"] == []
     assert body["roles"] == []
 
 
