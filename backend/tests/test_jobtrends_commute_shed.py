@@ -85,8 +85,14 @@ def test_local_only_drops_national_remote() -> None:
     assert role_in_shed("Remote", TIER_FRONT_RANGE, local_only=True) is False
     # A remote posting that merely names the area is still remote → excluded.
     assert role_in_shed("Remote - Colorado", TIER_FRONT_RANGE, local_only=True) is False
-    # …whereas a small/local employer (default) still keeps remote.
+    # The broad state token is dropped under local_only: far-CO ≠ the local office.
+    assert (
+        role_in_shed("Colorado Springs, CO", TIER_FRONT_RANGE, local_only=True) is False
+    )
+    assert role_in_shed("Denver, Colorado", TIER_FRONT_RANGE, local_only=True) is False
+    # …but a small/local employer (default) still keeps remote and CO-wide.
     assert role_in_shed("Remote", TIER_FRONT_RANGE, local_only=False) is True
+    assert role_in_shed("Denver, Colorado", TIER_FRONT_RANGE, local_only=False) is True
 
 
 def test_wy_remote_keeps_everything() -> None:

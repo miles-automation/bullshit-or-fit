@@ -81,6 +81,12 @@ _TIER_AREA_TOKENS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Broad state/region tokens that match a whole state, not a commutable metro. They're
+# fine for small local employers, but under `local_only` (big national boards) they'd
+# admit far-CO postings (Colorado Springs, Denver) that aren't the local office, so
+# local_only matches only the specific-metro tokens.
+_BROAD_AREA_TOKENS = frozenset({"colorado"})
+
 
 @dataclass(frozen=True)
 class ShedEmployer:
@@ -315,9 +321,9 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
             "Anduril acquired Numerica's radar + C2 business (Jan 2025) — ~100+ "
             "engineers in Fort Collins doing sensor-fusion / tracking / signal "
             "processing (C++/Python). Hot, deeply-funded defense-tech; live "
-            "Greenhouse feed showing its Colorado roles (the Fort Collins office is "
-            "the ex-Numerica team; national-remote roles show on /you, not here). "
-            "Clearance common."
+            "Greenhouse feed pinned to the Fort Collins / NoCo office roles (the "
+            "ex-Numerica team; far-CO + national-remote roles show on /you, not "
+            "here). Clearance common."
         ),
     ),
     ShedEmployer(
@@ -391,12 +397,13 @@ def role_in_shed(location: str | None, tier: str, *, local_only: bool = False) -
     _, is_remote = classify_location(location)
     tokens = _TIER_AREA_TOKENS.get(tier, ())
     loc = (location or "").lower()
-    area_match = any(t in loc for t in tokens)
     if local_only:
-        # National employer: only a genuine local office — a remote posting that
-        # merely names the area (e.g. "Remote - Colorado") is still remote → out.
-        return area_match and not is_remote
-    return is_remote or area_match
+        # National employer → only a genuine local office: match the specific-metro
+        # tokens (not the broad state catch-all, which would admit Denver/Colo
+        # Springs) AND exclude anything remote (even "Remote - Colorado").
+        office_tokens = (t for t in tokens if t not in _BROAD_AREA_TOKENS)
+        return not is_remote and any(t in loc for t in office_tokens)
+    return is_remote or any(t in loc for t in tokens)
 
 
 def sync_registry(session: Session) -> int:
