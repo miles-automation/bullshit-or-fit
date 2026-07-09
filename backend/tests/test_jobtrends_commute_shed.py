@@ -78,6 +78,15 @@ def test_cheyenne_matches_warren_and_city() -> None:
     assert role_in_shed("Denver, CO", TIER_CHEYENNE) is False
 
 
+def test_local_only_drops_national_remote() -> None:
+    # A big national employer (local_only) shows ONLY its local-office roles; its
+    # national-remote roles belong on /you, not the place-based radar.
+    assert role_in_shed("Fort Collins, CO", TIER_FRONT_RANGE, local_only=True) is True
+    assert role_in_shed("Remote", TIER_FRONT_RANGE, local_only=True) is False
+    # …whereas a small/local employer (default) still keeps remote.
+    assert role_in_shed("Remote", TIER_FRONT_RANGE, local_only=False) is True
+
+
 def test_wy_remote_keeps_everything() -> None:
     # WY-domiciled remote-first shops are small + aligned — every role passes.
     assert role_in_shed("Anywhere", TIER_WY_REMOTE) is True
