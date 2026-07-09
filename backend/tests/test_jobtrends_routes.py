@@ -169,6 +169,16 @@ def test_market_fit_route_empty_ok() -> None:
     assert body["top_roles"] == []
 
 
+def test_local_route_empty_ok() -> None:
+    resp = client.get("/api/v1/jobtrends/local")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["home"] == "Laramie, WY"
+    assert body["total_employers"] == 0  # empty DB → registry not yet synced
+    assert body["tiers"] == []
+    assert body["roles"] == []
+
+
 def test_summary_route_empty_ok() -> None:
     resp = client.get("/api/v1/jobtrends/summary")
     assert resp.status_code == 200

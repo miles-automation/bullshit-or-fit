@@ -452,9 +452,13 @@ def close_missing(
     *,
     provider: str,
     company_token: str | None = None,
+    source: str | None = None,
 ) -> None:
     """Flip roles not seen in this run to closed, within a provider (optionally a
-    single company). Everything fetched this run has last_seen == run_at."""
+    single company, and optionally a single `source`). Everything fetched this run
+    has last_seen == run_at. The `source` filter keeps parallel snapshot streams
+    that share a provider — e.g. the national 'ats' set and the local
+    'commute_shed' set — from closing each other's rows."""
     conditions = [
         AtsJob.provider == provider,
         AtsJob.last_seen < run_at,
@@ -462,6 +466,8 @@ def close_missing(
     ]
     if company_token is not None:
         conditions.append(AtsJob.company_token == company_token)
+    if source is not None:
+        conditions.append(AtsJob.source == source)
     session.execute(update(AtsJob).where(*conditions).values(is_open=False))
 
 

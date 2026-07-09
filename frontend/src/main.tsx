@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { App } from './App'
+import { LocalRadarView } from './LocalRadarView'
 import { MarketFitView } from './MarketFitView'
 import { TrendsDashboard } from './TrendsDashboard'
 
@@ -10,6 +11,7 @@ import { TrendsDashboard } from './TrendsDashboard'
 function Root() {
   const path = window.location.pathname.replace(/\/+$/, '')
   if (path === '/you') return <MarketFitView />
+  if (path === '/local') return <LocalRadarView />
   if (path === '/trends') return <TrendsDashboard />
   return <App />
 }

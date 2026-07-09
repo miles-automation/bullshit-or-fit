@@ -103,6 +103,20 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: OEWS load failed; will retry next interval")
 
+    # Commute-shed radar: sync the curated employer registry, then snapshot the
+    # live-feed subset (source='commute_shed', filtered to in-reach roles).
+    try:
+        from app.jobtrends.ats import AtsClient
+        from app.jobtrends.commute_shed import commute_shed_snapshot, sync_registry
+
+        with SessionLocal() as session:
+            sync_registry(session)
+            commute_shed_snapshot(session, AtsClient())
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "jobtrends: commute-shed snapshot failed; will retry next interval"
+        )
+
     # Now that every raw source is fresh, rebuild all derived tables.
     try:
         with SessionLocal() as session:

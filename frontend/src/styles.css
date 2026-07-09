@@ -1461,3 +1461,148 @@ button:disabled {
     font-size: 11px;
   }
 }
+
+/* --- Commute-shed radar (/local) ------------------------------------- */
+.shed-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+.shed-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shed-stat-n {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+.shed-stat-l {
+  font-size: 12px;
+}
+.shed-emp-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.shed-emp {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.shed-emp:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.shed-emp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.shed-emp-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.shed-emp-name:hover {
+  color: var(--accent-strong);
+}
+.shed-ext {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.shed-emp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.shed-count {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--signal-blue);
+  font-variant-numeric: tabular-nums;
+}
+.shed-new {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--signal-mint);
+  background: rgba(12, 143, 111, 0.12);
+  border-radius: 999px;
+  padding: 1px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.shed-maponly {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+.shed-emp-meta {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.shed-emp-notes {
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin-top: 5px;
+  line-height: 1.45;
+  max-width: 62ch;
+}
+.shed-role {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) 96px auto;
+  align-items: baseline;
+  gap: 10px;
+}
+.shed-role-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+a.shed-role-title:hover {
+  color: var(--accent-strong);
+}
+.shed-role-co {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shed-role-comp {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .shed-role {
+    grid-template-columns: minmax(0, 1fr) 84px;
+  }
+  .shed-role-co {
+    grid-column: 1 / 2;
+  }
+  .shed-role-comp {
+    grid-column: 2 / 3;
+  }
+}
+
+.mf-inline-link {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+.mf-inline-link:hover {
+  text-decoration: underline;
+}

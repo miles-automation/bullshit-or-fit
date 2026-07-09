@@ -266,6 +266,12 @@ export function MarketFitView() {
             the live market — what you're worth, who's hiring you, and what's worth
             learning next.
           </p>
+          <p className="muted">
+            Tied to one place?{" "}
+            <a className="mf-inline-link" href="/local">
+              See who's actually around you →
+            </a>
+          </p>
         </div>
         <a className="back-link" href="/trends">
           ← Market overview
