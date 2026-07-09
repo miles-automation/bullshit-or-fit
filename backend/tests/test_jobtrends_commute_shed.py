@@ -151,7 +151,8 @@ def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
             None,
         )
     ]
-    session = _SeqSession([_Result(counts), _Result(employers), _Result(roles)])
+    # Query order in commute_shed_report: employers, then counts, then roles.
+    session = _SeqSession([_Result(employers), _Result(counts), _Result(roles)])
 
     r = commute_shed_report(session, trajectory_days=7)  # type: ignore[arg-type]
 

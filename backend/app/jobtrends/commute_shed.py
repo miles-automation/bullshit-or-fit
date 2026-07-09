@@ -449,6 +449,22 @@ def commute_shed_snapshot(session: Session, client: AtsClient) -> dict[str, int]
             len(jobs),
         )
 
+    # Close orphaned rows: commute_shed openings whose token is no longer a live
+    # feed (employer dropped from the seed, or its ats_token cleared/renamed). The
+    # per-employer close above only covers tokens still in `feeds`, so without this
+    # those rows would linger open forever and leak into /local.
+    feed_tokens = [e.ats_token for e in feeds]
+    session.execute(
+        update(AtsJob)
+        .where(
+            AtsJob.source == SOURCE_COMMUTE_SHED,
+            AtsJob.is_open.is_(True),
+            AtsJob.company_token.not_in(feed_tokens),
+        )
+        .values(is_open=False)
+    )
+    session.commit()
+
     open_roles = session.scalar(
         select(func.count())
         .select_from(AtsJob)
@@ -521,6 +537,18 @@ def commute_shed_report(
     """
     since = datetime.now(tz=UTC) - timedelta(days=trajectory_days)
 
+    employers = (
+        session.execute(
+            select(CommuteShedEmployer).where(CommuteShedEmployer.active.is_(True))
+        )
+        .scalars()
+        .all()
+    )
+    # Only openings from ACTIVE feed employers count — a token whose employer was
+    # dropped/deactivated must not surface in counts or the openings list, even in
+    # the window before the snapshot's orphan-close runs.
+    active_feed_tokens = [e.ats_token for e in employers if e.provider and e.ats_token]
+
     # Live counts per feed token: total open + how many opened in the window.
     counts: dict[str, tuple[int, int]] = {}
     for token, total, fresh in session.execute(
@@ -529,18 +557,14 @@ def commute_shed_report(
             func.count(),
             func.count().filter(AtsJob.first_seen >= since),
         )
-        .where(AtsJob.is_open.is_(True), AtsJob.source == SOURCE_COMMUTE_SHED)
+        .where(
+            AtsJob.is_open.is_(True),
+            AtsJob.source == SOURCE_COMMUTE_SHED,
+            AtsJob.company_token.in_(active_feed_tokens),
+        )
         .group_by(AtsJob.company_token)
     ).all():
         counts[token] = (int(total), int(fresh or 0))
-
-    employers = (
-        session.execute(
-            select(CommuteShedEmployer).where(CommuteShedEmployer.active.is_(True))
-        )
-        .scalars()
-        .all()
-    )
 
     by_tier: dict[str, list[ShedEmployerOut]] = {t: [] for t in TIER_ORDER}
     for e in employers:
@@ -593,7 +617,11 @@ def commute_shed_report(
             AtsJob.comp_max,
             AtsJob.first_seen,
         )
-        .where(AtsJob.is_open.is_(True), AtsJob.source == SOURCE_COMMUTE_SHED)
+        .where(
+            AtsJob.is_open.is_(True),
+            AtsJob.source == SOURCE_COMMUTE_SHED,
+            AtsJob.company_token.in_(active_feed_tokens),
+        )
         .order_by(AtsJob.first_seen.desc())
         .limit(role_limit)
     ).all()
