@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type LandingConfig,
   ApiError,
-  fetchLandingConfig,
   submitLead,
   resendConfirmation,
   confirmLead,
@@ -17,8 +16,9 @@ interface LeadForm {
   website: string;
 }
 
-interface SignalCard {
+interface ToolCard {
   title: string;
+  href: string;
   description: string;
 }
 
@@ -32,10 +32,10 @@ type ConfirmState = "idle" | "loading" | "confirmed" | "error";
 
 const DEFAULT_CONFIG: LandingConfig = {
   enabled: true,
-  cta: "Request Early Access",
-  headline: "Verify resume claims before you waste interview cycles",
+  cta: "Get early access",
+  headline: "Know the market. Make your move.",
   subheadline:
-    "Bullshit or Fit cross-checks credentials, employment claims, and public footprint evidence so you can screen with confidence.",
+    "Bullshit or Fit maps the tech hiring market — who's actually hiring near you, what your skills are worth, and where demand is heading — so your next move is informed, not a guess.",
 };
 
 const CONFIRM_STATES: Record<ConfirmState, string | null> = {
@@ -45,50 +45,50 @@ const CONFIRM_STATES: Record<ConfirmState, string | null> = {
   error: "Confirmation failed. Please request another confirmation email.",
 };
 
-const SIGNAL_CARDS: SignalCard[] = [
+// The three surfaces that are LIVE today — the landing points straight at them.
+const TOOL_CARDS: ToolCard[] = [
   {
-    title: "Employment continuity",
+    title: "Local radar",
+    href: "/local",
     description:
-      "Cross-check employer claims against public web footprint, domain history, and timeline consistency.",
+      "Every employer reachable from your city, tiered by distance — live openings where we can read the board, plus who's heating up.",
   },
   {
-    title: "Credential plausibility",
+    title: "Your Market",
+    href: "/you",
     description:
-      "Flag mismatches between claimed education, certifications, and available third-party corroboration.",
+      "Benchmark your skills, seniority, and comp against live openings. What you're worth, who's hiring you, and what's worth learning next.",
   },
   {
-    title: "Identity and location clues",
+    title: "Market trends",
+    href: "/trends",
     description:
-      "Review behavioral and source signals that suggest synthetic profiles, spoofing, or credibility gaps.",
+      "What tech is actually hiring for — skills on the rise, real comp bands, and the demand-vs-supply balance over time.",
   },
 ];
 
 const WORKFLOW_STEPS: WorkflowStep[] = [
   {
-    title: "Submit candidate details",
+    title: "See your market",
     detail:
-      "Share the claim set you want verified before scheduling interviews.",
+      "Pull the live picture — who's hiring within reach of you and across the remote market, and what they pay.",
   },
   {
-    title: "Review evidence trace",
+    title: "Find your fit",
     detail:
-      "Bullshit or Fit assembles source-backed findings and confidence indicators.",
+      "Benchmark your skills and comp, spot the gaps worth closing, and surface the roles you actually match.",
   },
   {
-    title: "Decide with your team",
+    title: "Move with signal",
     detail:
-      "You get a pass, investigate, or decline recommendation with human review in control.",
+      "Track where demand is heading, so you prepare for where the market's going — not where it's been.",
   },
-];
-
-const DECISION_BRIEF_ITEMS: string[] = [
-  "Claim-by-claim verdict with confidence notes",
-  "Source trail for quick recruiter handoff",
-  "Recommended next step: pass, investigate, or decline",
 ];
 
 export function App() {
-  const [config, setConfig] = useState<LandingConfig>(DEFAULT_CONFIG);
+  // Hero copy lives in code now — the product owns it. (The old lead-gen landing
+  // pulled headline/CTA from a Spark Swarm config; that funnel is retired.)
+  const config: LandingConfig = DEFAULT_CONFIG;
   const [form, setForm] = useState<LeadForm>({
     name: "",
     email: "",
@@ -101,14 +101,6 @@ export function App() {
   const [resendEmail, setResendEmail] = useState("");
   const [resendMessage, setResendMessage] = useState("");
   const [confirmState, setConfirmState] = useState<ConfirmState>("idle");
-
-  useEffect(() => {
-    fetchLandingConfig()
-      .then((json) => {
-        setConfig((prev) => ({ ...prev, ...json }));
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -171,35 +163,33 @@ export function App() {
     <div className="page">
       <header className="hero section-shell">
         <div className="hero-copy">
-          <div className="badge">Candidate Risk Screening</div>
+          <div className="badge">For job seekers</div>
           <h1>{config.headline}</h1>
           <p className="hero-lead">{config.subheadline}</p>
           <div className="hero-actions">
-            <a className="cta" href="#lead-form">
-              {config.cta}
+            <a className="cta" href="/local">
+              Open the radar
             </a>
-            <a className="ghost-cta" href="#how-it-works">
-              See process
+            <a className="ghost-cta" href="#lead-form">
+              {config.cta}
             </a>
           </div>
           <ul className="hero-points">
-            <li>Evidence-first screening before interview scheduling</li>
-            <li>No black-box hiring decisions or opaque scoring</li>
-            <li>Built for recruiter and hiring manager workflows</li>
+            <li>See who's actually hiring within reach of you</li>
+            <li>Benchmark your skills and comp against the live market</li>
+            <li>Track where demand is heading — skate to the puck</li>
           </ul>
         </div>
-        <aside className="hero-panel" aria-label="Verification coverage">
-          <p className="panel-kicker">Signal Matrix</p>
-          <h2>What gets checked in every screening cycle</h2>
+        <aside className="hero-panel" aria-label="What you can do today">
+          <p className="panel-kicker">Live today</p>
+          <h2>Three ways to read the market</h2>
           <ul>
-            <li>Resume claim consistency across public sources</li>
-            <li>Employer and domain legitimacy indicators</li>
-            <li>Credential plausibility and timeline anomalies</li>
-            <li>Identity risk clues for synthetic or spoofed profiles</li>
+            <li>Local radar — who's around you, and who's hiring</li>
+            <li>Your Market — what your skills and comp are worth</li>
+            <li>Trends — what the market is actually hiring for</li>
           </ul>
           <p className="panel-note">
-            Output is packaged as a decision brief your team can review in
-            minutes.
+            Real openings and real wages — signal, not job-board noise.
           </p>
         </aside>
       </header>
@@ -210,35 +200,27 @@ export function App() {
 
       <main>
         <section className="section-shell proof-strip">
-          <p>Fast hiring needs fast validation, not guesswork.</p>
+          <p>Real openings. Real wages. Real signal — not job-board noise.</p>
           <ul>
-            <li>3-step review cycle</li>
-            <li>Source-backed evidence trace</li>
-            <li>Built-in confirmation workflow</li>
+            <li>Live employer + role data</li>
+            <li>Location-real comp bands</li>
+            <li>Demand trends over time</li>
           </ul>
         </section>
 
         <section className="section-shell">
-          <h2>Why good teams still miss fake profiles</h2>
+          <h2>Read the market three ways</h2>
           <p>
-            Interviews are expensive, and recruiters are expected to move fast.
-            Inflated titles, fake employers, and synthetic personas can slip
-            through when screening depends on manual gut checks.
-          </p>
-        </section>
-
-        <section className="section-shell">
-          <h2>What Bullshit or Fit verifies</h2>
-          <p>
-            Bullshit or Fit cross-references candidate claims against verifiable
-            web evidence so your team can triage risk before interviews.
+            Most job hunts run on guesswork and job-board noise. Bullshit or Fit
+            gives you the live picture — where the work is, what it pays, and
+            where it's heading — so you spend your effort where it counts.
           </p>
           <div className="signal-grid">
-            {SIGNAL_CARDS.map((card) => (
-              <article className="signal-card" key={card.title}>
-                <h3>{card.title}</h3>
+            {TOOL_CARDS.map((card) => (
+              <a className="signal-card" key={card.title} href={card.href}>
+                <h3>{card.title} →</h3>
                 <p>{card.description}</p>
-              </article>
+              </a>
             ))}
           </div>
         </section>
@@ -257,25 +239,13 @@ export function App() {
           </ol>
         </section>
 
-        <section className="section-shell trust-panel">
-          <h2>What you get before interview scheduling</h2>
-          <ul className="brief-list">
-            {DECISION_BRIEF_ITEMS.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <p>
-            Bullshit or Fit provides screening intelligence, not employment
-            decisions. Human review stays in control.
-          </p>
-        </section>
-
         <section id="lead-form" className="section-shell form-section">
           <div className="form-intro">
-            <h2>Get early access</h2>
+            <h2>Join the waitlist</h2>
             <p>
-              Tell us what roles you are hiring for and we will walk you through
-              the first verification workflow.
+              We're building the fuller job-seeker toolkit — a resume
+              substance-check, per-posting fit scoring, and more. Leave your
+              email to get in early.
             </p>
           </div>
           <div className="form-wrap">
@@ -291,7 +261,7 @@ export function App() {
                 />
               </label>
               <label>
-                Work Email
+                Email
                 <input
                   type="email"
                   value={form.email}
@@ -302,7 +272,7 @@ export function App() {
                 />
               </label>
               <label>
-                Company
+                Where are you based? (optional)
                 <input
                   value={form.company}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -311,7 +281,7 @@ export function App() {
                 />
               </label>
               <label>
-                What role are you hiring for?
+                What are you working toward? (optional)
                 <textarea
                   value={form.message}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
@@ -332,7 +302,7 @@ export function App() {
                 />
               </label>
               <button type="submit" disabled={status === "submitting"}>
-                {status === "submitting" ? "Submitting..." : "Request Access"}
+                {status === "submitting" ? "Submitting..." : "Join the waitlist"}
               </button>
             </form>
             {statusMessage && (
@@ -361,8 +331,8 @@ export function App() {
         <a href="/privacy.html">Privacy</a>
         <a href="/terms.html">Terms</a>
         <span>
-          Verification support only. Final hiring decisions require human
-          review.
+          Market intelligence, not career or financial advice — just what the
+          postings say.
         </span>
       </footer>
     </div>
