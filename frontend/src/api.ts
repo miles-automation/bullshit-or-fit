@@ -452,6 +452,62 @@ export const fetchWages = (area: string) =>
 export const fetchLocal = () =>
   apiFetch<CommuteShedResponse>("/api/v1/jobtrends/local");
 
+// ---- concept-testing harness ---------------------------------------------
+
+export interface ExpTier {
+  name: string;
+  price: string;
+  blurb: string;
+  cta_label: string;
+  checkout_url: string | null;
+}
+
+export interface ExpConcept {
+  slug: string;
+  name: string;
+  badge: string;
+  headline: string;
+  subhead: string;
+  bullets: string[];
+  how_it_works: string[];
+  tiers: ExpTier[];
+  accent: string | null;
+}
+
+export interface ExpFunnel {
+  slug: string;
+  name: string;
+  views: number;
+  intents: number;
+  reserves: number;
+  intent_rate: number;
+}
+
+export interface ExpEventIn {
+  event_type: "view" | "intent" | "reserve";
+  tier?: string | null;
+  session_id?: string | null;
+  utm_source?: string | null;
+  utm_campaign?: string | null;
+  referrer?: string | null;
+}
+
+export const fetchConcept = (slug: string) =>
+  apiFetch<ExpConcept>(`/api/v1/exp/concepts/${encodeURIComponent(slug)}`);
+
+export const fetchExpSummary = () =>
+  apiFetch<{ concepts: ExpFunnel[] }>("/api/v1/exp/summary");
+
+// Fire-and-forget funnel event; never throws into the render path.
+export function logExpEvent(slug: string, payload: ExpEventIn): void {
+  fetch(`/api/v1/exp/${encodeURIComponent(slug)}/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export const fetchMarketFit = (
   skills: string[],
   seniority: string | null,

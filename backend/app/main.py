@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.logging_config import configure_logging
-from app.routers import jobtrends, landing, leads
+from app.routers import experiments, jobtrends, landing, leads
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ def api_healthz() -> dict[str, str]:
 app.include_router(leads.router, prefix="/api/v1")
 app.include_router(landing.router, prefix="/api/v1")
 app.include_router(jobtrends.router, prefix="/api/v1")
+app.include_router(experiments.router, prefix="/api/v1")
 
 
 # --- Static / SPA fallback ---
