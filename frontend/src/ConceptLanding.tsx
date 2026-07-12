@@ -126,8 +126,11 @@ export function ConceptLanding({ slug }: { slug: string }) {
 
       <main>
         <section id="pricing" className="section-shell">
-          <h2>Simple pricing</h2>
-          <p className="muted">Start today — cancel anytime.</p>
+          <h2>Early-access pricing</h2>
+          <p className="muted">
+            We're gauging interest before we build this — reserve at this price and
+            you won't be charged now.
+          </p>
           <div className="concept-tiers">
             {concept.tiers.map((t) => (
               <article className="concept-tier" key={t.name}>
@@ -144,11 +147,13 @@ export function ConceptLanding({ slug }: { slug: string }) {
 
         <section id="reserve" className="section-shell form-section">
           <div className="form-intro">
-            <h2>{reserved ? "You're on the list" : "Get early access"}</h2>
+            <h2>{reserved ? "You're on the list" : "Reserve your spot"}</h2>
             <p>
               {reserved
-                ? "Thanks — we'll email you the moment it's ready."
-                : "We're onboarding the first users now. Leave your email to get in."}
+                ? "Thanks — you won't be charged. We'll email you only if we build this."
+                : "We're gauging interest before building this. Leave your email to " +
+                  "reserve at this price — no charge now, and we'll only reach out if " +
+                  "it's happening."}
             </p>
           </div>
           {!reserved && (
@@ -171,7 +176,7 @@ export function ConceptLanding({ slug }: { slug: string }) {
       <footer className="site-footer">
         <a href="/privacy.html">Privacy</a>
         <a href="/terms.html">Terms</a>
-        <span>Early access — building in progress.</span>
+        <span>Early access — gauging interest. No charge.</span>
       </footer>
     </div>
   );

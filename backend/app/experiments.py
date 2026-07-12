@@ -64,8 +64,12 @@ class Tier:
     name: str  # "Pro"
     price: str  # "$29/mo"
     blurb: str
-    cta_label: str = "Start free trial"
-    # Stripe Payment Link. None → the email "reserve" fallback (weaker signal).
+    # Honest, purchase-shaped CTA: a real price + "get early access" measures
+    # willingness to pay WITHOUT implying the product is live. Clicking it logs
+    # `intent` (round 1: no charge, no Stripe) and reveals the interest-gauging note.
+    cta_label: str = "Get early access"
+    # Stripe Payment Link. None → the email "reserve" flow (interest-gauging, no
+    # charge). Only set once you're building + near-launch (an honest pre-sale).
     checkout_url: str | None = None
 
 
@@ -107,7 +111,7 @@ CONCEPTS: list[Concept] = [
             "Download a clean, accountant-ready sheet",
         ],
         tiers=[
-            Tier("Solo", "$19/mo", "Up to 100 receipts/mo", "Start free trial"),
+            Tier("Solo", "$19/mo", "Up to 100 receipts/mo"),
             Tier("Business", "$49/mo", "Up to 500 receipts + QuickBooks export"),
         ],
     ),
