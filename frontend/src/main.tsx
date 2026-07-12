@@ -2,6 +2,8 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { App } from './App'
+import { ConceptLanding } from './ConceptLanding'
+import { ExpDashboard } from './ExpDashboard'
 import { LocalRadarView } from './LocalRadarView'
 import { MarketFitView } from './MarketFitView'
 import { TrendsDashboard } from './TrendsDashboard'
@@ -13,6 +15,8 @@ function Root() {
   if (path === '/you') return <MarketFitView />
   if (path === '/local') return <LocalRadarView />
   if (path === '/trends') return <TrendsDashboard />
+  if (path === '/exp') return <ExpDashboard />
+  if (path.startsWith('/c/')) return <ConceptLanding slug={path.slice(3)} />
   return <App />
 }
 

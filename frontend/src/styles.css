@@ -1687,3 +1687,130 @@ a.signal-card:hover {
 a.signal-card h3 {
   color: var(--accent-strong, #c03e18);
 }
+
+/* --- Concept-testing harness (/c/{slug}, /exp) --------------------- */
+.concept-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.concept-steps li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 14px;
+}
+.concept-step-n {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  display: inline-grid;
+  place-items: center;
+}
+.concept-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 14px;
+}
+.concept-tier {
+  flex: 1 1 220px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  background: linear-gradient(150deg, #fffdf8 0%, #f5ebd9 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.concept-tier h3 {
+  margin: 0;
+}
+.concept-price {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--accent-strong);
+  margin: 0;
+}
+.concept-tier button.cta {
+  margin-top: 12px;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+}
+
+/* readout table */
+.exp-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-x: auto;
+}
+.exp-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) 70px 80px 80px 80px 110px 100px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border-radius: 8px;
+}
+.exp-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.exp-row:not(.exp-head):nth-child(even) {
+  background: rgba(221, 198, 161, 0.15);
+}
+.exp-leader {
+  background: rgba(12, 143, 111, 0.1) !important;
+  outline: 1px solid var(--signal-mint);
+}
+.exp-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.exp-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+.exp-intent {
+  font-weight: 800;
+  color: var(--signal-blue);
+}
+.exp-cpi {
+  font-weight: 800;
+  color: var(--accent-strong);
+}
+.exp-spend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.exp-spend input {
+  width: 68px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 720px) {
+  .exp-row {
+    grid-template-columns: minmax(120px, 1.4fr) 56px 64px 64px;
+  }
+  .exp-row > *:nth-child(n + 5) {
+    display: none;
+  }
+}
