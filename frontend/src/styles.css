@@ -1671,3 +1671,19 @@ a.shed-role-title:hover {
 .shed-mover-of {
   font-size: 12px;
 }
+
+/* signal-card is now a clickable tool link — keep it looking like a card */
+a.signal-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+a.signal-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent, #c03e18);
+  box-shadow: 0 12px 28px rgba(72, 40, 11, 0.12);
+}
+a.signal-card h3 {
+  color: var(--accent-strong, #c03e18);
+}

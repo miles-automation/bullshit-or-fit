@@ -73,70 +73,43 @@ describe('App', () => {
   describe('rendering', () => {
     it('renders the default headline and CTA', async () => {
       render(<App />)
-      expect(screen.getByText('Verify resume claims before you waste interview cycles')).toBeInTheDocument()
-      expect(screen.getByText('Request Early Access')).toBeInTheDocument()
+      expect(screen.getByText('Know the market. Make your move.')).toBeInTheDocument()
+      expect(screen.getByText('Get early access')).toBeInTheDocument()
     })
 
-    it('renders all signal cards', () => {
+    it('renders all tool cards', () => {
       render(<App />)
-      expect(screen.getByText('Employment continuity')).toBeInTheDocument()
-      expect(screen.getByText('Credential plausibility')).toBeInTheDocument()
-      expect(screen.getByText('Identity and location clues')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /Local radar/ })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /Your Market/ })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /Market trends/ })).toBeInTheDocument()
     })
 
     it('renders workflow steps', () => {
       render(<App />)
-      expect(screen.getByText('Submit candidate details')).toBeInTheDocument()
-      expect(screen.getByText('Review evidence trace')).toBeInTheDocument()
-      expect(screen.getByText('Decide with your team')).toBeInTheDocument()
+      expect(screen.getByText('See your market')).toBeInTheDocument()
+      expect(screen.getByText('Find your fit')).toBeInTheDocument()
+      expect(screen.getByText('Move with signal')).toBeInTheDocument()
     })
 
-    it('renders the legal disclaimer in the footer', () => {
+    it('renders the disclaimer in the footer', () => {
       render(<App />)
       expect(
-        screen.getByText('Verification support only. Final hiring decisions require human review.'),
+        screen.getByText('Market intelligence, not career or financial advice — just what the postings say.'),
       ).toBeInTheDocument()
     })
 
     it('renders the lead form with required fields', () => {
       render(<App />)
       expect(screen.getByText('Name')).toBeInTheDocument()
-      expect(screen.getByText('Work Email')).toBeInTheDocument()
-      expect(screen.getByText('Company')).toBeInTheDocument()
-      expect(screen.getByText('What role are you hiring for?')).toBeInTheDocument()
+      expect(screen.getByText('Email')).toBeInTheDocument()
+      expect(screen.getByText('Where are you based? (optional)')).toBeInTheDocument()
+      expect(screen.getByText('What are you working toward? (optional)')).toBeInTheDocument()
     })
 
     it('renders privacy and terms links in footer', () => {
       render(<App />)
       expect(screen.getByText('Privacy')).toHaveAttribute('href', '/privacy.html')
       expect(screen.getByText('Terms')).toHaveAttribute('href', '/terms.html')
-    })
-  })
-
-  describe('landing config', () => {
-    it('fetches and applies custom config from API', async () => {
-      globalThis.fetch = mockFetch({
-        landingConfig: {
-          headline: 'Custom headline from API',
-          cta: 'Join Now',
-        },
-      }) as unknown as typeof globalThis.fetch
-
-      render(<App />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Custom headline from API')).toBeInTheDocument()
-      })
-      expect(screen.getByText('Join Now')).toBeInTheDocument()
-    })
-
-    it('keeps defaults when config fetch fails', async () => {
-      globalThis.fetch = vi.fn(() => Promise.reject(new Error('Network error'))) as unknown as typeof globalThis.fetch
-
-      render(<App />)
-
-      // Defaults should remain
-      expect(screen.getByText('Verify resume claims before you waste interview cycles')).toBeInTheDocument()
     })
   })
 
@@ -147,12 +120,12 @@ describe('App', () => {
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
-      const emailInput = screen.getByRole('textbox', { name: /work email/i })
+      const emailInput = screen.getByRole('textbox', { name: 'Email' })
 
       await user.type(nameInput, 'Jane Recruiter')
       await user.type(emailInput, 'jane@example.com')
 
-      const submitButton = screen.getByRole('button', { name: /request access/i })
+      const submitButton = screen.getByRole('button', { name: /join the waitlist/i })
       await user.click(submitButton)
 
       await waitFor(() => {
@@ -178,11 +151,11 @@ describe('App', () => {
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
-      const emailInput = screen.getByRole('textbox', { name: /work email/i })
+      const emailInput = screen.getByRole('textbox', { name: 'Email' })
       await user.type(nameInput, 'Jane')
       await user.type(emailInput, 'jane@co.com')
 
-      const submitButton = screen.getByRole('button', { name: /request access/i })
+      const submitButton = screen.getByRole('button', { name: /join the waitlist/i })
       await user.click(submitButton)
 
       expect(screen.getByRole('button', { name: /submitting/i })).toBeDisabled()
@@ -197,11 +170,11 @@ describe('App', () => {
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
-      const emailInput = screen.getByRole('textbox', { name: /work email/i })
+      const emailInput = screen.getByRole('textbox', { name: 'Email' })
       await user.type(nameInput, 'Jane')
       await user.type(emailInput, 'jane@co.com')
 
-      await user.click(screen.getByRole('button', { name: /request access/i }))
+      await user.click(screen.getByRole('button', { name: /join the waitlist/i }))
 
       await waitFor(() => {
         expect(screen.getByText('Rate limit exceeded.')).toBeInTheDocument()
@@ -219,11 +192,11 @@ describe('App', () => {
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
-      const emailInput = screen.getByRole('textbox', { name: /work email/i })
+      const emailInput = screen.getByRole('textbox', { name: 'Email' })
       await user.type(nameInput, 'Jane')
       await user.type(emailInput, 'jane@co.com')
 
-      await user.click(screen.getByRole('button', { name: /request access/i }))
+      await user.click(screen.getByRole('button', { name: /join the waitlist/i }))
 
       await waitFor(() => {
         expect(screen.getByText('Submission failed due to a network error.')).toBeInTheDocument()
@@ -236,11 +209,11 @@ describe('App', () => {
       render(<App />)
 
       const nameInput = screen.getByRole('textbox', { name: /name/i })
-      const emailInput = screen.getByRole('textbox', { name: /work email/i })
+      const emailInput = screen.getByRole('textbox', { name: 'Email' })
       await user.type(nameInput, 'Jane')
       await user.type(emailInput, 'jane@co.com')
 
-      await user.click(screen.getByRole('button', { name: /request access/i }))
+      await user.click(screen.getByRole('button', { name: /join the waitlist/i }))
 
       await waitFor(() => {
         expect(nameInput).toHaveValue('')
