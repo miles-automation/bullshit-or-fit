@@ -41,6 +41,7 @@ from app.jobtrends.ats import (
 )
 from app.jobtrends.geo import classify_location
 from app.jobtrends.models import AtsJob, CommuteShedEmployer, CommuteShedStat
+from app.jobtrends.neogov import PROVIDER_NEOGOV, NeogovClient, NeogovConfig
 from app.jobtrends.workday import PROVIDER_WORKDAY, WorkdayClient, WorkdayConfig
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,9 @@ class ShedEmployer:
     # Workday employers set provider='workday' + this config; ats_token is reused as
     # the row/join token (the CXS API needs tenant/host/site, not a board slug).
     workday: WorkdayConfig | None = None
+    # NEOGOV (governmentjobs.com) gov employers: provider='neogov' + this config;
+    # ats_token must equal the agency slug (that's the job rows' company_token).
+    neogov: NeogovConfig | None = None
     # Big national employers: keep only their local-office roles (drop national-remote
     # ones, which belong on /you, not this place-based radar).
     local_only: bool = False
@@ -113,12 +117,13 @@ class ShedEmployer:
 
 
 # --- The curated map -------------------------------------------------------
-# Real employers reachable from Laramie, WY. Live feeds verified 2026-07-09:
-# Ursa Major + Anduril/ex-Numerica (Greenhouse), JumpCloud (Lever), and Broadcom +
-# HPE (Workday CXS, Fort-Collins-filtered). The rest are Taleo/iCIMS/private, so
-# they're map-only (careers_url + notes) until a feed is found. Watch for
-# acquisitions (Teton→Markforged, Numerica→Anduril) staling careers URLs. Add rows
-# freely — sync picks them up; a token dropped here is auto-deactivated.
+# Real employers reachable from Laramie, WY. Live feeds: Ursa Major + Anduril/
+# ex-Numerica (Greenhouse), JumpCloud (Lever), Broadcom + HPE (Workday CXS,
+# Fort-Collins-filtered), and State of Wyoming (NEOGOV, tech-filtered — the local
+# long tail). The rest are Taleo/iCIMS/private, so they're map-only (careers_url +
+# notes) until a feed is found. Watch for acquisitions (Teton→Markforged,
+# Numerica→Anduril) staling careers URLs. Add rows freely — sync picks them up; a
+# token dropped here is auto-deactivated.
 SEED_EMPLOYERS: list[ShedEmployer] = [
     # --- Laramie (in town) ---
     ShedEmployer(
@@ -199,16 +204,20 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
     ),
     ShedEmployer(
         token="state-of-wyoming",
-        name="State of Wyoming (ETS)",
+        name="State of Wyoming",
         tier=TIER_CHEYENNE,
         category="government",
         hq_city="Cheyenne",
         hq_state="WY",
         distance_mi=50,
+        provider=PROVIDER_NEOGOV,
+        ats_token="wyoming",  # governmentjobs.com agency slug = the row company_token
+        neogov=NeogovConfig(agency="wyoming"),
         careers_url="https://www.governmentjobs.com/careers/wyoming",
         notes=(
-            "State Enterprise Technology Services — software/data/IT roles. NEOGOV "
-            "board (governmentjobs.com); a candidate for a future auto-feed."
+            "State gov — software/data/IT/GIS/systems roles across ~320 postings. "
+            "Live NEOGOV feed, filtered to tech roles in the Cheyenne area. Steady, "
+            "benefits, no clearance."
         ),
     ),
     ShedEmployer(
@@ -481,6 +490,7 @@ def commute_shed_snapshot(
     session: Session,
     client: AtsClient,
     workday_client: WorkdayClient | None = None,
+    neogov_client: NeogovClient | None = None,
 ) -> SnapshotResult:
     """Snapshot the live-feed subset of the registry into ats_jobs.
 
@@ -493,6 +503,7 @@ def commute_shed_snapshot(
     outage must not poison the velocity history with a stale/zero count).
     """
     workday_client = workday_client or WorkdayClient()
+    neogov_client = neogov_client or NeogovClient()
     run_at = datetime.now(tz=UTC)
     feeds = [e for e in SEED_EMPLOYERS if e.provider and e.ats_token]
     refreshed: list[str] = []
@@ -506,6 +517,14 @@ def commute_shed_snapshot(
                     )
                     continue
                 jobs = workday_client.fetch(e.ats_token, e.name, e.workday)  # type: ignore[arg-type]
+            elif e.provider == PROVIDER_NEOGOV:
+                if e.neogov is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is neogov but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = neogov_client.fetch(e.neogov)
             else:
                 company = Company(name=e.name, provider=e.provider, token=e.ats_token)  # type: ignore[arg-type]
                 jobs = client.fetch_company(company)
