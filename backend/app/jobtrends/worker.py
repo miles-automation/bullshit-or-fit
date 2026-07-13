@@ -69,6 +69,15 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: USAJobs snapshot failed; will retry next interval")
 
+    # Adzuna (all-industry aggregator) — no-ops until app_id/app_key are configured.
+    try:
+        from app.jobtrends.adzuna import AdzunaClient, adzuna_snapshot
+
+        with SessionLocal() as session:
+            adzuna_snapshot(session, AdzunaClient())
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: Adzuna snapshot failed; will retry next interval")
+
     # WARN filings (supply side) — idempotent upsert of each state's feed.
     try:
         from app.jobtrends.warn import WarnClient, warn_ingest

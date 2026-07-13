@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     # x500 results/page. 20 covers the API's hard 10k paginatable cap (the true
     # federal total is larger, but USAJobs won't serve past 10k via search).
     usajobs_max_pages: int = 20
+
+    # --- Adzuna (all-industry job aggregator) — free app_id + app_key from
+    # developer.adzuna.com (2-min signup). Empty = snapshot skips. This is the
+    # big, diverse corpus expansion (millions of postings across every industry). ---
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    adzuna_country: str = "us"
+    # queries x pages x 50 results. 10 default queries x 10 pages ~= 5k roles/run,
+    # accruing a large diverse pool over successive snapshots.
+    adzuna_pages: int = 10
     # Optional forward proxy for USAJobs only — data.usajobs.gov is behind Akamai,
     # which IP-blocks datacenter egress; route via a residential-IP proxy. Empty =
     # direct (works from dev/residential IPs, blocked from the prod droplet).
