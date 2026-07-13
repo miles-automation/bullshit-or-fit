@@ -40,6 +40,9 @@ logger = logging.getLogger(__name__)
 PROVIDER_ADZUNA = "adzuna"
 SOURCE_ADZUNA = "adzuna"
 _BASE = "https://api.adzuna.com/v1/api/jobs"
+# Rows per upsert. AtsJob has ~20 columns; 500 rows = ~10k bind params, safely
+# under Postgres' 65535 cap even as the per-run pull grows.
+_UPSERT_CHUNK = 500
 
 # Broad, role-type queries that span ALL industries and skew toward the
 # ops/admin/coordination roles where repetitive manual work (the tooling-gap
@@ -180,7 +183,11 @@ def adzuna_snapshot(
         return {"skipped": 1, "open_roles": 0}
     run_at = datetime.now(tz=UTC)
     jobs = client.fetch_all()
-    upsert_jobs(session, jobs, run_at)
+    # Adzuna accumulates the whole multi-query pull (thousands of rows), and
+    # upsert_jobs inserts them in ONE statement — ~20 cols/row would blow Postgres'
+    # 65535-parameter cap. Chunk so each upsert stays well under the limit.
+    for start in range(0, len(jobs), _UPSERT_CHUNK):
+        upsert_jobs(session, jobs[start : start + _UPSERT_CHUNK], run_at)
     close_missing(session, run_at, provider=PROVIDER_ADZUNA)
     session.commit()
     open_roles = session.scalar(

@@ -60,3 +60,28 @@ def test_snapshot_skips_when_unconfigured() -> None:
     # No DB touched when unconfigured — returns skipped without needing a session.
     result = adzuna_snapshot(session=None, client=AdzunaClient(app_id="", app_key=""))
     assert result["skipped"] == 1
+
+
+def test_snapshot_chunks_large_upsert(monkeypatch) -> None:
+    """A large pull is upserted in <=500-row chunks so it never blows Postgres'
+    65535-parameter cap."""
+    from unittest.mock import MagicMock
+
+    import app.jobtrends.adzuna as adz
+
+    calls = []
+    monkeypatch.setattr(
+        adz, "upsert_jobs", lambda s, chunk, run_at: calls.append(len(chunk))
+    )
+    monkeypatch.setattr(adz, "close_missing", lambda *a, **k: None)
+
+    client = adz.AdzunaClient(app_id="x", app_key="y")
+    monkeypatch.setattr(
+        client, "fetch_all", lambda: list(range(1200))
+    )  # 1200 fake jobs
+
+    session = MagicMock()
+    session.scalar.return_value = 1200
+    out = adz.adzuna_snapshot(session, client)
+    assert calls == [500, 500, 200]  # chunked, not one 1200-row statement
+    assert out["skipped"] == 0
