@@ -177,7 +177,7 @@ export function ConceptLanding({ slug }: { slug: string }) {
         <a href="/privacy.html">Privacy</a>
         <a href="/terms.html">Terms</a>
         <span>Early access — gauging interest. No charge.</span>
-        <span>Not financial, legal, or tax advice.</span>
+        <span>Not career, financial, or legal advice.</span>
       </footer>
     </div>
   );

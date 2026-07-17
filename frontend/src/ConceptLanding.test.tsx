@@ -29,6 +29,6 @@ describe("ConceptLanding", () => {
     await waitFor(() =>
       expect(screen.getByText("Stop paying someone to reconcile your invoices")).toBeInTheDocument(),
     );
-    expect(screen.getByText("Not financial, legal, or tax advice.")).toBeInTheDocument();
+    expect(screen.getByText("Not career, financial, or legal advice.")).toBeInTheDocument();
   });
 });
