@@ -87,80 +87,90 @@ class Concept:
     accent: str | None = None  # optional hex for per-concept theming
 
 
-# NOTE: these are DRAFT placeholders to make the harness runnable — deliberately
-# diverse, non-job-related, each aimed at a buyer with a company card. Swap in the
-# real hypotheses; the ad test picks the winner, not us.
+# ROUND 1 concepts, surfaced by the venture machine's shot-ranker (spark-swarm,
+# venture-ideator-founder-fit) and bridged here via shot_pipeline.to_bof_concept.
+# All three are the top GIG-FED shots: proven willingness-to-pay (people already pay
+# freelancers/VAs for the manual version) AND a reachable buyer (they're on the
+# marketplace). Framing is deliberate — "the thing you pay a freelancer for, automated".
+# Round 1 = intent only: no checkout_url, honest "Get early access" CTA. The ad test
+# picks the winner, not us.
+#
+# Provenance (slug -> shot features), the join key for the outcome->training loop:
+#   document-data-extraction        ev 0.268  wtp 1.0 dist 0.90 sat 1.0  gigs+n8n+complaints
+#   bookkeeping-invoice-automation  ev 0.268  wtp 1.0 dist 0.90 sat 1.0  gigs+complaints
+#   lead-generation-research        ev 0.217  wtp 1.0 dist 0.90 sat 1.0  gigs+n8n+complaints
+# (sat 1.0 = crowded; these are "take a slice with faster execution" shots, not open fields.)
 CONCEPTS: list[Concept] = [
     Concept(
-        slug="tidyreceipts",
-        name="Receipts → clean spreadsheet",
+        slug="document-data-extraction",
+        name="Messy PDFs -> clean data",
+        badge="For ops & admin teams",
+        headline="Turn a pile of PDFs into a clean spreadsheet",
+        subhead=(
+            "Drop in forms, statements, or reports and get every field extracted, checked, "
+            "and exported. The data-entry job you pay a VA for, done in minutes."
+        ),
+        bullets=[
+            "Every field extracted and validated -- scans or native PDFs",
+            "You define the columns once; we fill them on every batch",
+            "Export to Excel, Google Sheets, or an API",
+        ],
+        how_it_works=[
+            "Upload a batch of documents",
+            "We extract and double-check every field",
+            "Download clean, structured data",
+        ],
+        tiers=[
+            Tier("Solo", "$29/mo", "For one person, the core workflow"),
+            Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
+        ],
+    ),
+    Concept(
+        slug="bookkeeping-invoice-automation",
+        name="Invoices -> reconciled books",
         badge="For small-business owners",
-        headline="Turn a shoebox of receipts into a clean spreadsheet",
+        headline="Stop paying someone to reconcile your invoices",
         subhead=(
-            "Forward or snap your receipts and invoices; get a tidy, categorized "
-            "spreadsheet (or QuickBooks-ready export) back in minutes. No manual entry."
+            "Forward your invoices and bank exports; get categorized, reconciled books "
+            "back. The bookkeeping gig you hire out, automated."
         ),
         bullets=[
-            "Snap, email, or drop a PDF — we read it",
-            "Vendor, date, amount, category, tax — extracted and checked",
-            "Export to Excel, Google Sheets, or QuickBooks",
+            "Reads every invoice and receipt",
+            "Matches each to your ledger and bank feed",
+            "Flags exactly what doesn't reconcile -- nothing silently dropped",
         ],
         how_it_works=[
-            "Send receipts (photo, email, or upload)",
-            "We extract + categorize every line",
-            "Download a clean, accountant-ready sheet",
+            "Forward invoices + a bank export",
+            "We categorize and reconcile",
+            "Review the flags, export to QuickBooks or Xero",
         ],
         tiers=[
-            Tier("Solo", "$19/mo", "Up to 100 receipts/mo"),
-            Tier("Business", "$49/mo", "Up to 500 receipts + QuickBooks export"),
+            Tier("Solo", "$29/mo", "For one person, the core workflow"),
+            Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
     ),
     Concept(
-        slug="followups",
-        name="Meeting notes → follow-ups",
-        badge="For consultants & account managers",
-        headline="Every meeting, turned into the follow-up you forget to send",
+        slug="lead-generation-research",
+        name="Lead list, built for you",
+        badge="For founders & sales teams",
+        headline="The lead-list research you hire out, on tap",
         subhead=(
-            "Drop your notes or a transcript; get the recap email, the action items, "
-            "and the next-step nudge — written in your voice, ready to send."
+            "Describe your ideal customer and get a verified, enriched lead list back -- "
+            "the VA research task, automated and always fresh."
         ),
         bullets=[
-            "Recap email drafted in your tone, per client",
-            "Action items with owners + due dates",
-            "A follow-up reminder so nothing goes cold",
+            "Finds and verifies companies + contacts matching your ICP",
+            "Enriches with the fields you actually sell on",
+            "Export as CSV or sync straight to your CRM",
         ],
         how_it_works=[
-            "Paste notes or a transcript after a call",
-            "Get a send-ready recap + action list",
-            "One click to copy, or send from your inbox",
+            "Describe your ideal customer profile",
+            "We build and verify the list",
+            "Export or push it to your CRM",
         ],
         tiers=[
-            Tier("Pro", "$15/mo", "Unlimited meetings, one workspace"),
-            Tier("Team", "$39/mo", "Shared templates + client history"),
-        ],
-    ),
-    Concept(
-        slug="whiteboardsnap",
-        name="Whiteboard photo → clean doc",
-        badge="For teams & builders",
-        headline="Photograph a whiteboard, get a clean editable doc",
-        subhead=(
-            "Snap the messy whiteboard at the end of a session; get back a structured, "
-            "editable document — diagrams, lists, and decisions, digitized and shareable."
-        ),
-        bullets=[
-            "Handwriting + boxes-and-arrows, read accurately",
-            "Structured output: decisions, todos, diagram",
-            "Export to Notion, Markdown, or a shared link",
-        ],
-        how_it_works=[
-            "Take a photo of the whiteboard",
-            "We digitize + structure it",
-            "Edit and share in seconds",
-        ],
-        tiers=[
-            Tier("Personal", "$9/mo", "Unlimited snaps, personal use"),
-            Tier("Team", "$29/mo", "Shared workspace + integrations"),
+            Tier("Solo", "$29/mo", "For one person, the core workflow"),
+            Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
     ),
 ]
