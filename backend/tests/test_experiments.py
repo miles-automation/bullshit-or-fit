@@ -39,7 +39,7 @@ class _Boom:
 
 def test_log_event_rejects_bad_type_and_unknown_slug() -> None:
     b = _Boom()
-    assert log_event(b, concept_slug="tidyreceipts", event_type="bogus") is False  # type: ignore[arg-type]
+    assert log_event(b, concept_slug=CONCEPTS[0].slug, event_type="bogus") is False  # type: ignore[arg-type]
     assert log_event(b, concept_slug="does-not-exist", event_type=EVENT_VIEW) is False  # type: ignore[arg-type]
 
 
