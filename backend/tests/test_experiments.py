@@ -23,6 +23,7 @@ from app.experiments import (
     EVENT_RESERVE,
     EVENT_VIEW,
     ExperimentEvent,
+    content_fingerprint,
     experiment_summary,
     get_concept,
     log_event,
@@ -46,6 +47,28 @@ def test_round1_has_no_payment_path() -> None:
     for c in CONCEPTS:
         for t in c.tiers:
             assert t.checkout_url is None
+
+
+# The version pin: everything a visitor can see, hashed. If this test fails you
+# changed concept copy or pricing — bump that concept's `version` AND update its
+# pin here (labels logged under the old fingerprint are a different experiment).
+_VERSION_PINS: dict[str, tuple[int, str]] = {
+    "document-data-extraction": (1, "cb33acd0333756d8"),
+    "bookkeeping-invoice-automation": (1, "9df6f6f788c685d2"),
+    "lead-generation-research": (1, "84b7e1d4b2df76f1"),
+}
+
+
+def test_version_is_enforced_by_content_fingerprint() -> None:
+    assert set(_VERSION_PINS) == {c.slug for c in CONCEPTS}, (
+        "concept added/removed — update _VERSION_PINS"
+    )
+    for c in CONCEPTS:
+        version, fp = _VERSION_PINS[c.slug]
+        assert (c.version, content_fingerprint(c)) == (version, fp), (
+            f"{c.slug}: visible content changed — bump `version` and re-pin "
+            f"(new fingerprint: {content_fingerprint(c)})"
+        )
 
 
 def test_provenance_joins_back_to_the_selector() -> None:
@@ -115,17 +138,45 @@ def test_intent_is_stamped_with_price_version_and_candidate_ref() -> None:
     assert ev.session_id == "sid-1"
 
 
-def test_unknown_tier_still_logs_but_without_a_price() -> None:
+def test_intent_requires_a_tier_of_this_concept() -> None:
+    """An intent without a resolvable price is not a purchase-intent label:
+    reject it rather than store an unpriceable row in the money metric."""
+    b = _Boom()
+    assert (
+        log_event(
+            b,  # type: ignore[arg-type]
+            concept_slug=CONCEPTS[0].slug,
+            event_type=EVENT_INTENT,
+            tier="No Such Tier",
+        )
+        is False
+    )
+    assert (
+        log_event(b, concept_slug=CONCEPTS[0].slug, event_type=EVENT_INTENT) is False  # type: ignore[arg-type]
+    )
+    # views and reserves are fine without a tier
+    cap = _Capture()
+    assert log_event(cap, concept_slug=CONCEPTS[0].slug, event_type=EVENT_VIEW)  # type: ignore[arg-type]
+    assert log_event(cap, concept_slug=CONCEPTS[0].slug, event_type=EVENT_RESERVE)  # type: ignore[arg-type]
+
+
+def test_impression_echo_wins_over_current_config() -> None:
+    """The client echoes the impression it rendered. If a deploy repriced the
+    concept between page load and click, the echo — not current config — is the
+    observation, so it is what gets stored."""
+    c = CONCEPTS[0]
     cap = _Capture()
     assert log_event(
         cap,  # type: ignore[arg-type]
-        concept_slug=CONCEPTS[0].slug,
+        concept_slug=c.slug,
         event_type=EVENT_INTENT,
-        tier="No Such Tier",
+        tier=c.tiers[0].name,
+        price_shown="$19/mo",  # what an older deploy showed
+        concept_version=c.version + 1,
     )
     (ev,) = cap.added
-    assert ev.price_shown is None
-    assert ev.candidate_ref == CONCEPTS[0].provenance.ref
+    assert ev.price_shown == "$19/mo"
+    assert ev.concept_version == c.version + 1
 
 
 # ---- summary over a fake session ------------------------------------------
@@ -150,11 +201,14 @@ class _FakeSession:
 def test_summary_computes_intent_rate_and_ranks() -> None:
     first = CONCEPTS[0].slug
     second = CONCEPTS[1].slug
+    ver = CONCEPTS[0].version
     rows = [
-        (first, EVENT_VIEW, 100),
-        (first, EVENT_INTENT, 3),  # 3% intent
-        (second, EVENT_VIEW, 100),
-        (second, EVENT_INTENT, 8),  # 8% intent → should rank first
+        (first, EVENT_VIEW, ver, 100),
+        (first, EVENT_INTENT, ver, 3),  # 3% intent
+        (second, EVENT_VIEW, ver, 100),
+        (second, EVENT_INTENT, ver, 8),  # 8% intent → should rank first
+        # a stale version's rows must NOT blend into the current funnel
+        (first, EVENT_INTENT, ver + 1, 500),
     ]
     funnels = experiment_summary(_FakeSession(rows))  # type: ignore[arg-type]
     assert funnels[0].slug == second and funnels[0].intent_rate == 8.0
@@ -184,8 +238,11 @@ def test_summary_deduplicates_sessions() -> None:
     with _real_session() as s:
         for sid in ("v1", "v1", "v2"):  # 2 unique viewers
             log_event(s, concept_slug=slug, event_type=EVENT_VIEW, session_id=sid)
+        tier = CONCEPTS[0].tiers[0].name
         for sid in ("a", "a", "b", None):  # a double-clicked; one event lost its sid
-            log_event(s, concept_slug=slug, event_type=EVENT_INTENT, session_id=sid)
+            log_event(
+                s, concept_slug=slug, event_type=EVENT_INTENT, tier=tier, session_id=sid
+            )
         log_event(s, concept_slug=slug, event_type=EVENT_RESERVE, session_id="a")
         f = next(x for x in experiment_summary(s) if x.slug == slug)
     assert f.views == 2

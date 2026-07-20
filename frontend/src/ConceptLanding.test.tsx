@@ -15,6 +15,7 @@ const CONCEPT: api.ExpConcept = {
     { name: "Solo", price: "$29/mo", blurb: "core", cta_label: "Get early access", checkout_url: null },
   ],
   accent: null,
+  version: 1,
 };
 
 describe("ConceptLanding", () => {
@@ -52,6 +53,9 @@ describe("ConceptLanding", () => {
       .mock.calls.filter(([, p]) => p.event_type === "intent");
     expect(intents).toHaveLength(1);
     expect(intents[0][1].tier).toBe("Solo");
+    // the impression echo: the label carries what THIS page rendered
+    expect(intents[0][1].price_shown).toBe("$29/mo");
+    expect(intents[0][1].concept_version).toBe(1);
     expect(screen.getByRole("status").textContent).toContain("isn't available yet");
     expect(screen.getByRole("status").textContent).toContain("not been charged");
   });
