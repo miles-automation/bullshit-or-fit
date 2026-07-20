@@ -248,11 +248,11 @@ _BY_SLUG = {c.slug: c for c in CONCEPTS}
 
 # The shared landing-page chrome (frontend/src/ConceptLanding.tsx: "Early-access
 # pricing", the interest-gauging/no-charge copy around the CTA and reserve flow)
-# is part of what every visitor saw. It is pinned string-by-string in
-# frontend/src/ConceptLanding.test.tsx; that pin's failure message says to bump
-# THIS constant. It is folded into every concept fingerprint below, so bumping it
-# forces a version bump + re-pin on every concept — chrome change = a new
-# experiment everywhere.
+# is part of what every visitor saw. The ENTIRE rendered page text is pinned as
+# one normalized string (PAGE_TEXT_PIN in frontend/src/ConceptLanding.test.tsx);
+# that pin's failure directs bumping THIS constant. It is folded into every
+# concept fingerprint below, so bumping it forces a version bump + re-pin on
+# every concept — chrome change = a new experiment everywhere.
 PAGE_CHROME_VERSION = 1
 
 
@@ -311,8 +311,10 @@ def log_event(
     rendered (the page sends back what it fetched). The impression is the
     observation: if a deploy repriced the concept between page load and click, the
     echo is right and current config is wrong. An `intent` — the money metric —
-    MUST carry the full echo AND name a tier of this concept: an intent whose
-    price cannot be attested is rejected, never relabeled from current config.
+    MUST carry the full echo (tier + price + version): an intent whose price
+    cannot be attested is rejected, never relabeled from current config. The
+    tier is validated against current config only when the echoed version IS
+    current; a stale-version echo stands on its own (see inline comment).
     For view/reserve, missing fields fall back to current config only when the
     echoed version IS current (otherwise price stays NULL — honestly unknown).
     These fields are as unauthenticated as the click itself — this instruments
@@ -326,10 +328,16 @@ def log_event(
         return False  # versions start at 1; a malformed echo is not an observation
     price_shown = price_shown or None
     t = concept.find_tier(tier)
-    if event_type == EVENT_INTENT and (
-        t is None or price_shown is None or concept_version is None
-    ):
-        return False
+    if event_type == EVENT_INTENT:
+        if tier is None or price_shown is None or concept_version is None:
+            return False  # unattested intent: not a purchase-intent label
+        if concept_version == concept.version and t is None:
+            # The page claims CURRENT config but names a tier it doesn't have —
+            # junk, reject. A STALE-version echo whose tier no longer resolves
+            # (renamed/removed in a later deploy) is kept: the full echo IS the
+            # observation, and dropping it would lose the exact deploy-skew
+            # click the echo exists to preserve.
+            return False
     if (
         price_shown is None
         and t is not None

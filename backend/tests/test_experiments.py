@@ -240,6 +240,38 @@ def test_reserve_fallback_never_pairs_old_version_with_new_price() -> None:
     assert current.price_shown == c.tiers[0].price
 
 
+def test_stale_page_intent_survives_a_tier_rename() -> None:
+    """The deploy-skew click the echo exists to preserve: a v1 page whose tier
+    was renamed/removed in a later deploy still delivers a fully-attested intent
+    (tier + price + version echoed) and must be STORED, not discarded. The same
+    unknown tier claiming the CURRENT version is junk and stays rejected."""
+    c = CONCEPTS[0]
+    cap = _Capture()
+    assert log_event(
+        cap,  # type: ignore[arg-type]
+        concept_slug=c.slug,
+        event_type=EVENT_INTENT,
+        tier="Old Tier Name",  # no longer in current config
+        price_shown="$29/mo",
+        concept_version=c.version + 1,  # a different deploy's page
+    )
+    (ev,) = cap.added
+    assert ev.tier == "Old Tier Name"
+    assert ev.price_shown == "$29/mo"
+    assert ev.concept_version == c.version + 1
+    assert (
+        log_event(
+            _Boom(),  # type: ignore[arg-type]
+            concept_slug=c.slug,
+            event_type=EVENT_INTENT,
+            tier="Old Tier Name",
+            price_shown="$29/mo",
+            concept_version=c.version,  # claims CURRENT config → junk, reject
+        )
+        is False
+    )
+
+
 def test_impression_echo_wins_over_current_config() -> None:
     """The client echoes the impression it rendered. If a deploy repriced the
     concept between page load and click, the echo — not current config — is the
