@@ -246,12 +246,23 @@ CONCEPTS: list[Concept] = [
 _BY_SLUG = {c.slug: c for c in CONCEPTS}
 
 
+# The shared landing-page chrome (frontend/src/ConceptLanding.tsx: "Early-access
+# pricing", the interest-gauging/no-charge copy around the CTA and reserve flow)
+# is part of what every visitor saw. It is pinned string-by-string in
+# frontend/src/ConceptLanding.test.tsx; that pin's failure message says to bump
+# THIS constant. It is folded into every concept fingerprint below, so bumping it
+# forces a version bump + re-pin on every concept — chrome change = a new
+# experiment everywhere.
+PAGE_CHROME_VERSION = 1
+
+
 def content_fingerprint(c: Concept) -> str:
     """Stable hash of everything a visitor can see on the landing page. Pinned
     per-version in tests/test_experiments.py: editing copy or pricing without
     bumping `version` fails the pin, so `version` is enforced, not aspirational."""
     payload = json.dumps(
         {
+            "page_chrome": PAGE_CHROME_VERSION,
             "badge": c.badge,
             "headline": c.headline,
             "subhead": c.subhead,
@@ -296,28 +307,38 @@ def log_event(
     """Append one funnel event. Returns False (no raise) on a bad type so a caller
     on the hot landing-page path never breaks the render.
 
-    An `intent` MUST name a tier of this concept — an intent without a resolvable
-    price is not a purchase-intent label and is rejected, not stored.
-
     `price_shown`/`concept_version` are the CLIENT'S echo of the impression it
     rendered (the page sends back what it fetched). The impression is the
     observation: if a deploy repriced the concept between page load and click, the
-    echo is right and current config is wrong. When the client omits them (older
-    payloads), we fall back to current config. These fields are as unauthenticated
-    as the click itself — this instruments our own ad traffic, it is not a ledger.
-    `candidate_ref` is always server-stamped (slug-stable across versions)."""
+    echo is right and current config is wrong. An `intent` — the money metric —
+    MUST carry the full echo AND name a tier of this concept: an intent whose
+    price cannot be attested is rejected, never relabeled from current config.
+    For view/reserve, missing fields fall back to current config only when the
+    echoed version IS current (otherwise price stays NULL — honestly unknown).
+    These fields are as unauthenticated as the click itself — this instruments
+    our own ad traffic, it is not a ledger. `candidate_ref` is always
+    server-stamped (slug-stable across versions)."""
     concept = _BY_SLUG.get(concept_slug)
     if event_type not in EVENT_TYPES or concept is None:
         return False
+    price_shown = price_shown or None
     t = concept.find_tier(tier)
-    if event_type == EVENT_INTENT and t is None:
+    if event_type == EVENT_INTENT and (
+        t is None or price_shown is None or concept_version is None
+    ):
         return False
+    if (
+        price_shown is None
+        and t is not None
+        and concept_version in (None, concept.version)
+    ):
+        price_shown = t.price
     session.add(
         ExperimentEvent(
             concept_slug=concept_slug,
             event_type=event_type,
             tier=tier,
-            price_shown=price_shown if price_shown else (t.price if t else None),
+            price_shown=price_shown,
             concept_version=concept_version if concept_version else concept.version,
             candidate_ref=concept.provenance.ref,
             session_id=session_id,

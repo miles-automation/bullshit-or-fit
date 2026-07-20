@@ -59,4 +59,49 @@ describe("ConceptLanding", () => {
     expect(screen.getByRole("status").textContent).toContain("isn't available yet");
     expect(screen.getByRole("status").textContent).toContain("not been charged");
   });
+
+  it("logs reserve with the reserved tier's displayed price and version", async () => {
+    render(<ConceptLanding slug={CONCEPT.slug} />);
+    await waitFor(() => expect(screen.getByText("$29/mo")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Get early access" }));
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "a@b.co" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reserve my spot" }));
+    const reserves = vi
+      .mocked(api.logExpEvent)
+      .mock.calls.filter(([, p]) => p.event_type === "reserve");
+    expect(reserves).toHaveLength(1);
+    expect(reserves[0][1].tier).toBe("Solo");
+    expect(reserves[0][1].price_shown).toBe("$29/mo");
+    expect(reserves[0][1].concept_version).toBe(1);
+  });
+
+  // THE CHROME PIN. This copy sits around the price and the CTA — it is part of
+  // the experiment every visitor sees. If this test fails you changed it: bump
+  // PAGE_CHROME_VERSION in backend/app/experiments.py (which invalidates every
+  // concept fingerprint there, forcing a version bump + re-pin per concept) and
+  // update the strings here. Do NOT just update the strings.
+  it("pins the shared page-chrome copy (bump PAGE_CHROME_VERSION on change)", async () => {
+    render(<ConceptLanding slug={CONCEPT.slug} />);
+    await waitFor(() => expect(screen.getByText("$29/mo")).toBeInTheDocument());
+    expect(screen.getByText("Early-access pricing")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We're gauging interest before we build this — reserve at this price and you won't be charged now.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Reserve your spot")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We're gauging interest before building this. Leave your email to reserve at this price — no charge now, and we'll only reach out if it's happening.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Early access — gauging interest. No charge.")).toBeInTheDocument();
+    expect(screen.getByText("Not career, financial, or legal advice.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Get early access" }));
+    expect(screen.getByRole("status").textContent).toBe(
+      "Solo isn't available yet — we're gauging interest before we build it. You have not been charged.",
+    );
+  });
 });

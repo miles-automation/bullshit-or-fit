@@ -10,9 +10,10 @@ import {
 // Session-scoped id so a `view` and a later `intent` in the same visit dedupe
 // into one funnel entry. sessionStorage, not localStorage: a returning visitor
 // is a new session (a fresh look at the price is a fresh observation), and a
-// permanent id would collapse visits across campaigns. When storage is blocked
-// return null — the backend counts session-less events individually, which
-// over-counts; a shared sentinel would collapse strangers into one person.
+// permanent id would collapse visits across campaigns. When storage is blocked,
+// fall back to an in-memory id — it still dedupes THIS page visit (a shared
+// sentinel would collapse strangers; null would let a double-click count twice).
+let memorySid: string | null = null;
 function sessionId(): string | null {
   try {
     const k = "bof_exp_sid";
@@ -23,7 +24,12 @@ function sessionId(): string | null {
     }
     return v;
   } catch {
-    return null;
+    try {
+      if (!memorySid) memorySid = crypto.randomUUID();
+      return memorySid;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -85,9 +91,15 @@ export function ConceptLanding({ slug }: { slug: string }) {
   async function onReserve(e: React.FormEvent) {
     e.preventDefault();
     if (!email) return;
+    // Echo the reserved tier's displayed price too — otherwise the backend
+    // would fill it from CURRENT config, which can pair an old version with a
+    // new price after a redeploy.
+    const reservedPrice =
+      concept?.tiers.find((t) => t.name === reserveTier)?.price ?? null;
     logExpEvent(slug, {
       event_type: "reserve",
       tier: reserveTier,
+      price_shown: reservedPrice,
       concept_version: concept?.version ?? null,
       session_id: sid,
       ...ctx,

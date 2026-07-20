@@ -53,9 +53,9 @@ def test_round1_has_no_payment_path() -> None:
 # changed concept copy or pricing — bump that concept's `version` AND update its
 # pin here (labels logged under the old fingerprint are a different experiment).
 _VERSION_PINS: dict[str, tuple[int, str]] = {
-    "document-data-extraction": (1, "cb33acd0333756d8"),
-    "bookkeeping-invoice-automation": (1, "9df6f6f788c685d2"),
-    "lead-generation-research": (1, "84b7e1d4b2df76f1"),
+    "document-data-extraction": (1, "e86719752433c0d8"),
+    "bookkeeping-invoice-automation": (1, "3e59fe7883015082"),
+    "lead-generation-research": (1, "f9f0cc619beabba8"),
 }
 
 
@@ -115,9 +115,9 @@ class _Capture:
 
 
 def test_intent_is_stamped_with_price_version_and_candidate_ref() -> None:
-    """The price stored is the price SHOWN at click time, resolved server-side —
-    a later repricing edit must not re-price this event. Version + candidate ref
-    ride along so the label joins back to the selector."""
+    """The intent label carries the echoed impression (price + version as
+    rendered), the server-stamped candidate ref, and the full channel/creative
+    context."""
     c = CONCEPTS[0]
     cap = _Capture()
     assert log_event(
@@ -125,6 +125,8 @@ def test_intent_is_stamped_with_price_version_and_candidate_ref() -> None:
         concept_slug=c.slug,
         event_type=EVENT_INTENT,
         tier=c.tiers[0].name,
+        price_shown=c.tiers[0].price,
+        concept_version=c.version,
         session_id="sid-1",
         utm_source="reddit",
         utm_campaign="round1",
@@ -138,26 +140,60 @@ def test_intent_is_stamped_with_price_version_and_candidate_ref() -> None:
     assert ev.session_id == "sid-1"
 
 
-def test_intent_requires_a_tier_of_this_concept() -> None:
-    """An intent without a resolvable price is not a purchase-intent label:
-    reject it rather than store an unpriceable row in the money metric."""
+def test_intent_requires_a_tier_and_the_full_impression_echo() -> None:
+    """An intent whose price cannot be attested is not a purchase-intent label:
+    reject it rather than store (or relabel from current config) an unpriceable
+    row in the money metric."""
+    c = CONCEPTS[0]
+    good = {
+        "tier": c.tiers[0].name,
+        "price_shown": c.tiers[0].price,
+        "concept_version": c.version,
+    }
     b = _Boom()
+    for missing in ("tier", "price_shown", "concept_version"):
+        args = {**good, missing: None}
+        assert (
+            log_event(b, concept_slug=c.slug, event_type=EVENT_INTENT, **args) is False  # type: ignore[arg-type]
+        )
     assert (
         log_event(
             b,  # type: ignore[arg-type]
-            concept_slug=CONCEPTS[0].slug,
+            concept_slug=c.slug,
             event_type=EVENT_INTENT,
-            tier="No Such Tier",
+            **{**good, "tier": "No Such Tier"},
         )
         is False
     )
-    assert (
-        log_event(b, concept_slug=CONCEPTS[0].slug, event_type=EVENT_INTENT) is False  # type: ignore[arg-type]
-    )
-    # views and reserves are fine without a tier
+    # views and reserves are fine without a tier or echo
     cap = _Capture()
-    assert log_event(cap, concept_slug=CONCEPTS[0].slug, event_type=EVENT_VIEW)  # type: ignore[arg-type]
-    assert log_event(cap, concept_slug=CONCEPTS[0].slug, event_type=EVENT_RESERVE)  # type: ignore[arg-type]
+    assert log_event(cap, concept_slug=c.slug, event_type=EVENT_VIEW)  # type: ignore[arg-type]
+    assert log_event(cap, concept_slug=c.slug, event_type=EVENT_RESERVE)  # type: ignore[arg-type]
+
+
+def test_reserve_fallback_never_pairs_old_version_with_new_price() -> None:
+    """A reserve that echoes a STALE version but no price must store price NULL
+    (honestly unknown), not current config's price — and a current-version
+    reserve gets the config fill."""
+    c = CONCEPTS[0]
+    cap = _Capture()
+    assert log_event(
+        cap,  # type: ignore[arg-type]
+        concept_slug=c.slug,
+        event_type=EVENT_RESERVE,
+        tier=c.tiers[0].name,
+        concept_version=c.version + 1,  # stale/mismatched page
+    )
+    assert log_event(
+        cap,  # type: ignore[arg-type]
+        concept_slug=c.slug,
+        event_type=EVENT_RESERVE,
+        tier=c.tiers[0].name,
+        concept_version=c.version,  # current page, echo omitted
+    )
+    stale, current = cap.added
+    assert stale.price_shown is None
+    assert current.price_shown == c.tiers[0].price
 
 
 def test_impression_echo_wins_over_current_config() -> None:
@@ -238,10 +274,16 @@ def test_summary_deduplicates_sessions() -> None:
     with _real_session() as s:
         for sid in ("v1", "v1", "v2"):  # 2 unique viewers
             log_event(s, concept_slug=slug, event_type=EVENT_VIEW, session_id=sid)
-        tier = CONCEPTS[0].tiers[0].name
+        t = CONCEPTS[0].tiers[0]
         for sid in ("a", "a", "b", None):  # a double-clicked; one event lost its sid
             log_event(
-                s, concept_slug=slug, event_type=EVENT_INTENT, tier=tier, session_id=sid
+                s,
+                concept_slug=slug,
+                event_type=EVENT_INTENT,
+                tier=t.name,
+                price_shown=t.price,
+                concept_version=CONCEPTS[0].version,
+                session_id=sid,
             )
         log_event(s, concept_slug=slug, event_type=EVENT_RESERVE, session_id="a")
         f = next(x for x in experiment_summary(s) if x.slug == slug)
