@@ -1,0 +1,4 @@
+{
+  "_comment": "sha256 of the /c/{slug} page's full visible text across its three states (initial | post-CTA note | post-reservation), computed and verified by frontend/src/ConceptLanding.test.tsx. Folded into every concept content_fingerprint (app/experiments.py): changing visible copy forces updating this hash, which breaks every concept-version pin in backend/tests/test_experiments.py — bump each concept's version and re-pin. Copy change = new experiment everywhere.",
+  "text_sha256": "56565506b9374687d8f95c75d160a0994c7d641231c16164938ac25f71237904"
+}

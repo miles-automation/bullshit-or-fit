@@ -33,6 +33,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import BigInteger, DateTime, Integer, Text, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -248,12 +249,15 @@ _BY_SLUG = {c.slug: c for c in CONCEPTS}
 
 # The shared landing-page chrome (frontend/src/ConceptLanding.tsx: "Early-access
 # pricing", the interest-gauging/no-charge copy around the CTA and reserve flow)
-# is part of what every visitor saw. The ENTIRE rendered page text is pinned as
-# one normalized string (PAGE_TEXT_PIN in frontend/src/ConceptLanding.test.tsx);
-# that pin's failure directs bumping THIS constant. It is folded into every
-# concept fingerprint below, so bumping it forces a version bump + re-pin on
-# every concept — chrome change = a new experiment everywhere.
-PAGE_CHROME_VERSION = 1
+# is part of what every visitor saw. page_chrome.json holds the sha256 of the
+# page's full visible text across its three states; the frontend test COMPUTES
+# that hash from the rendered page and asserts it matches, so a copy edit can
+# only be fixed by updating the JSON — which changes every concept fingerprint
+# below and breaks every version pin. The chrome→version link is mechanical,
+# not an instruction. Chrome change = a new experiment everywhere.
+PAGE_CHROME_HASH: str = json.loads(
+    (Path(__file__).parent / "page_chrome.json").read_text()
+)["text_sha256"]
 
 
 def content_fingerprint(c: Concept) -> str:
@@ -262,7 +266,7 @@ def content_fingerprint(c: Concept) -> str:
     bumping `version` fails the pin, so `version` is enforced, not aspirational."""
     payload = json.dumps(
         {
-            "page_chrome": PAGE_CHROME_VERSION,
+            "page_chrome": PAGE_CHROME_HASH,
             "badge": c.badge,
             "headline": c.headline,
             "subhead": c.subhead,

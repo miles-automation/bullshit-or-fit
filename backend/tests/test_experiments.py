@@ -53,9 +53,9 @@ def test_round1_has_no_payment_path() -> None:
 # changed concept copy or pricing — bump that concept's `version` AND update its
 # pin here (labels logged under the old fingerprint are a different experiment).
 _VERSION_PINS: dict[str, tuple[int, str]] = {
-    "document-data-extraction": (1, "e86719752433c0d8"),
-    "bookkeeping-invoice-automation": (1, "3e59fe7883015082"),
-    "lead-generation-research": (1, "f9f0cc619beabba8"),
+    "document-data-extraction": (1, "3d7a3b9f12a3dd0f"),
+    "bookkeeping-invoice-automation": (1, "c6b5ecf4519c26bc"),
+    "lead-generation-research": (1, "7c01e4d48ca99777"),
 }
 
 

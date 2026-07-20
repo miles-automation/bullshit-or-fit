@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConceptLanding } from "./ConceptLanding";
@@ -77,23 +81,58 @@ describe("ConceptLanding", () => {
     expect(reserves[0][1].concept_version).toBe(1);
   });
 
-  // THE CHROME PIN. EVERYTHING a visitor can read on this page — shared chrome
-  // AND the (fixed) concept fixture — normalized and pinned as one string, so no
-  // visible copy edit can slip past unpinned. If this test fails you changed
-  // visitor-visible copy: bump PAGE_CHROME_VERSION in backend/app/experiments.py
-  // (which invalidates every concept fingerprint there, forcing a version bump +
-  // re-pin per concept) and THEN update the pin here. Do NOT just update the pin.
-  it("pins ALL visible page copy (bump PAGE_CHROME_VERSION on change)", async () => {
+  // THE CHROME PIN. EVERYTHING a visitor can read across the page's three
+  // states (initial, post-CTA note, post-reservation) — shared chrome AND the
+  // fixed concept fixture — normalized and pinned, so no visible copy edit can
+  // slip past unpinned. The sha256 of the combined text is cross-checked
+  // against backend/app/page_chrome.json, which the backend folds into every
+  // concept fingerprint: updating the JSON (the ONLY way to fix a copy change)
+  // mechanically breaks every backend version pin, forcing a version bump +
+  // re-pin per concept. The string pins below exist for a readable diff.
+  it("pins ALL visible page copy and its hash (backend/app/page_chrome.json)", async () => {
+    vi.spyOn(api, "submitLead").mockImplementation(
+      (() => Promise.resolve({})) as unknown as typeof api.submitLead,
+    );
     const norm = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
     const { container } = render(<ConceptLanding slug={CONCEPT.slug} />);
     await waitFor(() => expect(screen.getByText("$29/mo")).toBeInTheDocument());
-    expect(norm(container.textContent)).toBe(PAGE_TEXT_PIN);
+    const initial = norm(container.textContent);
     fireEvent.click(screen.getByRole("button", { name: "Get early access" }));
-    expect(norm(screen.getByRole("status").textContent)).toBe(
-      "Solo isn't available yet — we're gauging interest before we build it. You have not been charged.",
+    const note = norm(screen.getByRole("status").textContent);
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "a@b.co" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reserve my spot" }));
+    await waitFor(() =>
+      expect(screen.getByText("You're on the list")).toBeInTheDocument(),
     );
+    const reserved = norm(container.textContent);
+
+    expect(initial).toBe(PAGE_TEXT_PIN);
+    expect(note).toBe(NOTE_PIN);
+    expect(reserved).toBe(RESERVED_TEXT_PIN);
+
+    const chromeJson = JSON.parse(
+      readFileSync(
+        resolve(dirname(fileURLToPath(import.meta.url)), "../../backend/app/page_chrome.json"),
+        "utf-8",
+      ),
+    ) as { text_sha256: string };
+    const hash = createHash("sha256")
+      .update([initial, note, reserved].join("\n"))
+      .digest("hex");
+    expect(
+      hash,
+      "visible copy changed: update backend/app/page_chrome.json to this hash — " +
+        "that breaks every backend concept-version pin, which is the point: bump " +
+        "each concept's version and re-pin",
+    ).toBe(chromeJson.text_sha256);
   });
 });
 
 const PAGE_TEXT_PIN =
   "For small-business ownersStop paying someone to reconcile your invoicesForward your invoices; get reconciled books back.See pricingReads every invoiceMatches to your ledgerFlags mismatchesHow it works1Forward invoices2We reconcile3Review + exportEarly-access pricingWe're gauging interest before we build this — reserve at this price and you won't be charged now.Solo$29/mocoreGet early accessReserve your spotWe're gauging interest before building this. Leave your email to reserve at this price — no charge now, and we'll only reach out if it's happening.EmailReserve my spotPrivacyTermsEarly access — gauging interest. No charge.Not career, financial, or legal advice.";
+const NOTE_PIN =
+  "Solo isn't available yet — we're gauging interest before we build it. You have not been charged.";
+const RESERVED_TEXT_PIN =
+  "For small-business ownersStop paying someone to reconcile your invoicesForward your invoices; get reconciled books back.See pricingReads every invoiceMatches to your ledgerFlags mismatchesHow it works1Forward invoices2We reconcile3Review + exportEarly-access pricingWe're gauging interest before we build this — reserve at this price and you won't be charged now.Solo$29/mocoreGet early accessYou're on the listThanks — you won't be charged. We'll email you only if we build this.PrivacyTermsEarly access — gauging interest. No charge.Not career, financial, or legal advice.";
