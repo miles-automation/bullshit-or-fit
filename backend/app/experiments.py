@@ -19,12 +19,13 @@ that lands on Stripe is ~100× more predictive.
   (server config at log time is only the fallback — tiers are code config, and a
   redeploy between page load and click must not re-price the observation), plus
   the provenance ref joining the outcome back to the candidate + experiment that
-  selected the concept (see `Provenance`). `version` bumps are enforced by a
-  content-fingerprint pin in the tests.
+  selected the concept (see `Provenance`). `version` is derived from the
+  append-only fingerprint ledger in the tests — appending IS the bump.
 - `/exp` reads `experiment_summary` → per-concept funnel + intent-rate, counted in
   UNIQUE SESSIONS (one person clicking twice is one intent) and scoped to the
-  concept's CURRENT version (a bump = a new experiment). Cost-per-intent =
-  your ad spend ÷ intents (spend comes from the ad platform).
+  concept's CURRENT version (a bump = a new experiment; pre-instrument NULL-version
+  rows are excluded). Cost-per-intent = your ad spend ÷ intents (spend comes from
+  the ad platform).
 """
 
 from __future__ import annotations
@@ -391,25 +392,37 @@ def experiment_summary(session: Session) -> list[ConceptFunnel]:
 
     Only events from the concept's CURRENT version count — a version bump is new
     copy/pricing, i.e. a new experiment, so the funnel resets rather than blending
-    incomparable labels. Rows from before the version column existed (NULL) are
-    treated as version 1, which is what was live when they were logged. Older
-    versions stay in the table for direct SQL."""
+    incomparable labels. Rows with a NULL version (logged before this
+    instrumentation existed) are EXCLUDED: their prices are unattested and their
+    session ids used the old persistent-visitor semantics, so blending them
+    would corrupt the funnel they predate. They — and older versions — stay in
+    the table for direct SQL."""
     counts: dict[str, dict[str, int]] = {
         c.slug: {EVENT_VIEW: 0, EVENT_INTENT: 0, EVENT_RESERVE: 0} for c in CONCEPTS
     }
     # distinct non-null sessions + one per session-less row, in a single pass
-    version = func.coalesce(ExperimentEvent.concept_version, 1)
     for slug, etype, ver, n in session.execute(
         select(
             ExperimentEvent.concept_slug,
             ExperimentEvent.event_type,
-            version,
+            ExperimentEvent.concept_version,
             func.count(func.distinct(ExperimentEvent.session_id))
             + func.count().filter(ExperimentEvent.session_id.is_(None)),
-        ).group_by(ExperimentEvent.concept_slug, ExperimentEvent.event_type, version)
+        )
+        .where(ExperimentEvent.concept_version.is_not(None))
+        .group_by(
+            ExperimentEvent.concept_slug,
+            ExperimentEvent.event_type,
+            ExperimentEvent.concept_version,
+        )
     ).all():
         c = _BY_SLUG.get(slug)
-        if c is not None and int(ver) == c.version and etype in counts[slug]:
+        if (
+            c is not None
+            and ver is not None
+            and int(ver) == c.version
+            and etype in counts[slug]
+        ):
             counts[slug][etype] = int(n)
 
     out: list[ConceptFunnel] = []

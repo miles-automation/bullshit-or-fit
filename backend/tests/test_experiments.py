@@ -338,6 +338,9 @@ def test_summary_computes_intent_rate_and_ranks() -> None:
         (second, EVENT_INTENT, ver, 8),  # 8% intent → should rank first
         # a stale version's rows must NOT blend into the current funnel
         (first, EVENT_INTENT, ver + 1, 500),
+        # pre-instrument rows (NULL version: unattested price, old dedup
+        # semantics) must NOT blend either — excluded, not coalesced to v1
+        (first, EVENT_INTENT, None, 500),
     ]
     funnels = experiment_summary(_FakeSession(rows))  # type: ignore[arg-type]
     assert funnels[0].slug == second and funnels[0].intent_rate == 8.0
