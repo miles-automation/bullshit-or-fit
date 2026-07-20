@@ -49,25 +49,42 @@ def test_round1_has_no_payment_path() -> None:
             assert t.checkout_url is None
 
 
-# The version pin: everything a visitor can see, hashed. If this test fails you
-# changed concept copy or pricing — bump that concept's `version` AND update its
-# pin here (labels logged under the old fingerprint are a different experiment).
-_VERSION_PINS: dict[str, tuple[int, str]] = {
-    "document-data-extraction": (1, "3d7a3b9f12a3dd0f"),
-    "bookkeeping-invoice-automation": (1, "c6b5ecf4519c26bc"),
-    "lead-generation-research": (1, "7c01e4d48ca99777"),
+# The fingerprint ledger: APPEND-ONLY. Entry N is the fingerprint of version N
+# (everything a visitor could see at that version). If the fingerprint test
+# fails you changed visible copy or pricing: APPEND the new fingerprint to that
+# concept's list — the version is the ledger's LENGTH, so appending IS the bump,
+# and the old entry stays behind as the record of what version N-1 showed.
+# NEVER edit or remove an entry: that rewrites what a past version showed and
+# blends incomparable labels (in-repo tests can't prove history wasn't
+# rewritten — that's what PR review of this file is for; distinctness and the
+# derived version make appending the only natural fix).
+_FINGERPRINT_LEDGER: dict[str, list[str]] = {
+    "document-data-extraction": ["3d7a3b9f12a3dd0f"],
+    "bookkeeping-invoice-automation": ["c6b5ecf4519c26bc"],
+    "lead-generation-research": ["7c01e4d48ca99777"],
 }
 
 
-def test_version_is_enforced_by_content_fingerprint() -> None:
-    assert set(_VERSION_PINS) == {c.slug for c in CONCEPTS}, (
-        "concept added/removed — update _VERSION_PINS"
+def test_version_is_derived_from_the_append_only_fingerprint_ledger() -> None:
+    assert set(_FINGERPRINT_LEDGER) == {c.slug for c in CONCEPTS}, (
+        "concept added/removed — update _FINGERPRINT_LEDGER"
     )
     for c in CONCEPTS:
-        version, fp = _VERSION_PINS[c.slug]
-        assert (c.version, content_fingerprint(c)) == (version, fp), (
-            f"{c.slug}: visible content changed — bump `version` and re-pin "
-            f"(new fingerprint: {content_fingerprint(c)})"
+        ledger = _FINGERPRINT_LEDGER[c.slug]
+        assert len(set(ledger)) == len(ledger), (
+            f"{c.slug}: ledger entries must be distinct — an edited entry "
+            "rewrites what a past version showed"
+        )
+        assert content_fingerprint(c) == ledger[-1], (
+            f"{c.slug}: visible content changed — APPEND the new fingerprint "
+            f'"{content_fingerprint(c)}" to _FINGERPRINT_LEDGER (do not edit '
+            "the existing entry) and set the concept's version to the new "
+            "ledger length"
+        )
+        assert c.version == len(ledger), (
+            f"{c.slug}: version must equal the ledger length "
+            f"({len(ledger)}) — the ledger, not the config field, is the "
+            "source of truth for how many experiments this slug has run"
         )
 
 

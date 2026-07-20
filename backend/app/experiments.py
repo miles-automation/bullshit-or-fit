@@ -127,9 +127,10 @@ class Concept:
     how_it_works: list[str]
     tiers: list[Tier]
     provenance: Provenance
-    version: int = (
-        1  # bump on ANY copy/pricing change — enforced by the fingerprint pin
-    )
+    # version == length of this slug's entry in tests' _FINGERPRINT_LEDGER
+    # (append-only): any copy/pricing change appends a fingerprint there, and
+    # appending IS the bump. Enforced by the ledger test.
+    version: int = 1
     active: bool = True
     accent: str | None = None  # optional hex for per-concept theming
 
@@ -261,9 +262,10 @@ PAGE_CHROME_HASH: str = json.loads(
 
 
 def content_fingerprint(c: Concept) -> str:
-    """Stable hash of everything a visitor can see on the landing page. Pinned
-    per-version in tests/test_experiments.py: editing copy or pricing without
-    bumping `version` fails the pin, so `version` is enforced, not aspirational."""
+    """Stable hash of everything a visitor can see on the landing page. Recorded
+    in tests/test_experiments.py's append-only _FINGERPRINT_LEDGER, whose length
+    IS the concept's version: editing copy or pricing without appending (and so
+    bumping) fails the ledger test — `version` is derived, not aspirational."""
     payload = json.dumps(
         {
             "page_chrome": PAGE_CHROME_HASH,
