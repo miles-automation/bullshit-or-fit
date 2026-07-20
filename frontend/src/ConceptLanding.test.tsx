@@ -77,31 +77,23 @@ describe("ConceptLanding", () => {
     expect(reserves[0][1].concept_version).toBe(1);
   });
 
-  // THE CHROME PIN. This copy sits around the price and the CTA — it is part of
-  // the experiment every visitor sees. If this test fails you changed it: bump
-  // PAGE_CHROME_VERSION in backend/app/experiments.py (which invalidates every
-  // concept fingerprint there, forcing a version bump + re-pin per concept) and
-  // update the strings here. Do NOT just update the strings.
-  it("pins the shared page-chrome copy (bump PAGE_CHROME_VERSION on change)", async () => {
-    render(<ConceptLanding slug={CONCEPT.slug} />);
+  // THE CHROME PIN. EVERYTHING a visitor can read on this page — shared chrome
+  // AND the (fixed) concept fixture — normalized and pinned as one string, so no
+  // visible copy edit can slip past unpinned. If this test fails you changed
+  // visitor-visible copy: bump PAGE_CHROME_VERSION in backend/app/experiments.py
+  // (which invalidates every concept fingerprint there, forcing a version bump +
+  // re-pin per concept) and THEN update the pin here. Do NOT just update the pin.
+  it("pins ALL visible page copy (bump PAGE_CHROME_VERSION on change)", async () => {
+    const norm = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
+    const { container } = render(<ConceptLanding slug={CONCEPT.slug} />);
     await waitFor(() => expect(screen.getByText("$29/mo")).toBeInTheDocument());
-    expect(screen.getByText("Early-access pricing")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "We're gauging interest before we build this — reserve at this price and you won't be charged now.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Reserve your spot")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "We're gauging interest before building this. Leave your email to reserve at this price — no charge now, and we'll only reach out if it's happening.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Early access — gauging interest. No charge.")).toBeInTheDocument();
-    expect(screen.getByText("Not career, financial, or legal advice.")).toBeInTheDocument();
+    expect(norm(container.textContent)).toBe(PAGE_TEXT_PIN);
     fireEvent.click(screen.getByRole("button", { name: "Get early access" }));
-    expect(screen.getByRole("status").textContent).toBe(
+    expect(norm(screen.getByRole("status").textContent)).toBe(
       "Solo isn't available yet — we're gauging interest before we build it. You have not been charged.",
     );
   });
 });
+
+const PAGE_TEXT_PIN =
+  "For small-business ownersStop paying someone to reconcile your invoicesForward your invoices; get reconciled books back.See pricingReads every invoiceMatches to your ledgerFlags mismatchesHow it works1Forward invoices2We reconcile3Review + exportEarly-access pricingWe're gauging interest before we build this — reserve at this price and you won't be charged now.Solo$29/mocoreGet early accessReserve your spotWe're gauging interest before building this. Leave your email to reserve at this price — no charge now, and we'll only reach out if it's happening.EmailReserve my spotPrivacyTermsEarly access — gauging interest. No charge.Not career, financial, or legal advice.";

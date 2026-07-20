@@ -71,6 +71,35 @@ def test_version_is_enforced_by_content_fingerprint() -> None:
         )
 
 
+# A slug's provenance is IMMUTABLE. The outcome log joins on candidate_ref, and
+# log_event stamps it from CURRENT config — so reassigning a slug to a different
+# selector run would rebind in-flight pages' labels to the wrong candidate. If
+# this pin fails you tried exactly that: give the new candidate a NEW slug and
+# retire the old concept (active=False) instead.
+_PROVENANCE_PINS: dict[str, str] = {
+    "document-data-extraction": (
+        "spark-swarm/venture-ideator-founder-fit:shot-ranker/round-1"
+        "#document-data-extraction"
+    ),
+    "bookkeeping-invoice-automation": (
+        "spark-swarm/venture-ideator-founder-fit:shot-ranker/round-1"
+        "#bookkeeping-invoice-automation"
+    ),
+    "lead-generation-research": (
+        "spark-swarm/venture-ideator-founder-fit:shot-ranker/round-1"
+        "#lead-generation-research"
+    ),
+}
+
+
+def test_provenance_is_immutable_per_slug() -> None:
+    assert {c.slug: c.provenance.ref for c in CONCEPTS} == _PROVENANCE_PINS, (
+        "a slug's provenance changed — a different selector run must be a NEW "
+        "slug (retire the old concept), or in-flight labels join the wrong "
+        "candidate"
+    )
+
+
 def test_provenance_joins_back_to_the_selector() -> None:
     """Contract clause 6: every concept carries a real, stored candidate reference
     (not a comment) joining the outcome to the candidate + experiment."""
@@ -163,6 +192,21 @@ def test_intent_requires_a_tier_and_the_full_impression_echo() -> None:
             event_type=EVENT_INTENT,
             **{**good, "tier": "No Such Tier"},
         )
+        is False
+    )
+    # a malformed version echo (versions start at 1) is rejected for ANY event —
+    # the falsy 0 must not slip through to be "filled" with the current version
+    assert (
+        log_event(
+            b,  # type: ignore[arg-type]
+            concept_slug=c.slug,
+            event_type=EVENT_INTENT,
+            **{**good, "concept_version": 0},
+        )
+        is False
+    )
+    assert (
+        log_event(b, concept_slug=c.slug, event_type=EVENT_VIEW, concept_version=0)  # type: ignore[arg-type]
         is False
     )
     # views and reserves are fine without a tier or echo

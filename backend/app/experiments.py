@@ -316,11 +316,14 @@ def log_event(
     For view/reserve, missing fields fall back to current config only when the
     echoed version IS current (otherwise price stays NULL — honestly unknown).
     These fields are as unauthenticated as the click itself — this instruments
-    our own ad traffic, it is not a ledger. `candidate_ref` is always
-    server-stamped (slug-stable across versions)."""
+    our own ad traffic, it is not a ledger. `candidate_ref` is server-stamped:
+    a slug's provenance is IMMUTABLE (pinned in tests — a different selector run
+    means a NEW slug), so current config is always the right ref."""
     concept = _BY_SLUG.get(concept_slug)
     if event_type not in EVENT_TYPES or concept is None:
         return False
+    if concept_version is not None and concept_version < 1:
+        return False  # versions start at 1; a malformed echo is not an observation
     price_shown = price_shown or None
     t = concept.find_tier(tier)
     if event_type == EVENT_INTENT and (
@@ -339,7 +342,9 @@ def log_event(
             event_type=event_type,
             tier=tier,
             price_shown=price_shown,
-            concept_version=concept_version if concept_version else concept.version,
+            concept_version=(
+                concept_version if concept_version is not None else concept.version
+            ),
             candidate_ref=concept.provenance.ref,
             session_id=session_id,
             utm_source=utm_source,
