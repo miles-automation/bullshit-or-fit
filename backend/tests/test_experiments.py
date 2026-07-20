@@ -1,13 +1,28 @@
-"""Tests for the concept-testing harness (pure logic + wiring)."""
+"""Tests for the concept-testing harness (pure logic + wiring).
+
+The buy-click contract, clause by clause (frontend render clauses 1/2/5 are
+covered in frontend/src/ConceptLanding.test.tsx):
+  1. real price before the CTA          — concepts carry real tier prices
+  2. only explicit intent clicks logged — event types are distinct + validated
+  3. label completeness                 — price/version/channel/creative/session stored
+  4. no payment path                    — round 1 has no checkout_url anywhere
+  5. post-click "not available yet"     — frontend test
+  6. outcome joins back to the selector — provenance is data, stamped on events
+"""
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.db import get_db
 from app.experiments import (
     CONCEPTS,
     EVENT_INTENT,
+    EVENT_RESERVE,
     EVENT_VIEW,
+    ExperimentEvent,
     experiment_summary,
     get_concept,
     log_event,
@@ -26,6 +41,25 @@ def test_concepts_are_wellformed() -> None:
         assert all(t.price and t.name for t in c.tiers)
 
 
+def test_round1_has_no_payment_path() -> None:
+    """Contract clause 4: no checkout_url and no Stripe link anywhere in round 1."""
+    for c in CONCEPTS:
+        for t in c.tiers:
+            assert t.checkout_url is None
+
+
+def test_provenance_joins_back_to_the_selector() -> None:
+    """Contract clause 6: every concept carries a real, stored candidate reference
+    (not a comment) joining the outcome to the candidate + experiment."""
+    for c in CONCEPTS:
+        p = c.provenance
+        assert p.experiment and p.candidate and p.features and p.sources
+        # the concept slug IS the join key on the spark-swarm side (slugify(shot.domain))
+        assert p.candidate == c.slug
+        assert p.experiment in p.ref and p.candidate in p.ref
+        assert c.version >= 1
+
+
 # ---- log_event guards (no DB needed on the reject path) -------------------
 
 
@@ -41,6 +75,57 @@ def test_log_event_rejects_bad_type_and_unknown_slug() -> None:
     b = _Boom()
     assert log_event(b, concept_slug=CONCEPTS[0].slug, event_type="bogus") is False  # type: ignore[arg-type]
     assert log_event(b, concept_slug="does-not-exist", event_type=EVENT_VIEW) is False  # type: ignore[arg-type]
+
+
+# ---- label stamping (clause 3 + 6: the click must be interpretable later) --
+
+
+class _Capture:
+    def __init__(self) -> None:
+        self.added: list[ExperimentEvent] = []
+
+    def add(self, obj: ExperimentEvent) -> None:
+        self.added.append(obj)
+
+    def commit(self) -> None:
+        pass
+
+
+def test_intent_is_stamped_with_price_version_and_candidate_ref() -> None:
+    """The price stored is the price SHOWN at click time, resolved server-side —
+    a later repricing edit must not re-price this event. Version + candidate ref
+    ride along so the label joins back to the selector."""
+    c = CONCEPTS[0]
+    cap = _Capture()
+    assert log_event(
+        cap,  # type: ignore[arg-type]
+        concept_slug=c.slug,
+        event_type=EVENT_INTENT,
+        tier=c.tiers[0].name,
+        session_id="sid-1",
+        utm_source="reddit",
+        utm_campaign="round1",
+        utm_content="creative-a",
+    )
+    (ev,) = cap.added
+    assert ev.price_shown == c.tiers[0].price
+    assert ev.concept_version == c.version
+    assert ev.candidate_ref == c.provenance.ref
+    assert ev.utm_content == "creative-a"
+    assert ev.session_id == "sid-1"
+
+
+def test_unknown_tier_still_logs_but_without_a_price() -> None:
+    cap = _Capture()
+    assert log_event(
+        cap,  # type: ignore[arg-type]
+        concept_slug=CONCEPTS[0].slug,
+        event_type=EVENT_INTENT,
+        tier="No Such Tier",
+    )
+    (ev,) = cap.added
+    assert ev.price_shown is None
+    assert ev.candidate_ref == CONCEPTS[0].provenance.ref
 
 
 # ---- summary over a fake session ------------------------------------------
@@ -75,6 +160,38 @@ def test_summary_computes_intent_rate_and_ranks() -> None:
     assert funnels[0].slug == second and funnels[0].intent_rate == 8.0
     f_first = next(f for f in funnels if f.slug == first)
     assert f_first.views == 100 and f_first.intents == 3 and f_first.intent_rate == 3.0
+
+
+# ---- session dedup, against a real database (clause 3: DEDUPLICATED session) --
+
+
+def _real_session() -> Session:
+    """In-memory SQLite with an attached `experiments` schema so the real summary
+    SQL (DISTINCT + FILTER) runs against real rows."""
+    engine = create_engine(
+        "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
+    )
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ATTACH DATABASE ':memory:' AS experiments")
+    ExperimentEvent.__table__.create(engine)
+    return Session(engine)
+
+
+def test_summary_deduplicates_sessions() -> None:
+    """One person clicking twice is ONE intent. Session-less events can't be
+    deduplicated, so each counts once."""
+    slug = CONCEPTS[0].slug
+    with _real_session() as s:
+        for sid in ("v1", "v1", "v2"):  # 2 unique viewers
+            log_event(s, concept_slug=slug, event_type=EVENT_VIEW, session_id=sid)
+        for sid in ("a", "a", "b", None):  # a double-clicked; one event lost its sid
+            log_event(s, concept_slug=slug, event_type=EVENT_INTENT, session_id=sid)
+        log_event(s, concept_slug=slug, event_type=EVENT_RESERVE, session_id="a")
+        f = next(x for x in experiment_summary(s) if x.slug == slug)
+    assert f.views == 2
+    assert f.intents == 3  # {a, b} + one session-less event
+    assert f.reserves == 1
+    assert f.intent_rate == 150.0  # 3 intents / 2 views — honest, if odd-looking
 
 
 # ---- routes (DB-free empty session) ---------------------------------------
@@ -136,7 +253,16 @@ def test_concept_detail_and_404() -> None:
 
 def test_event_route_ok_and_never_500s() -> None:
     slug = CONCEPTS[0].slug
-    r = client.post(f"/api/v1/exp/{slug}/event", json={"event_type": EVENT_VIEW})
+    r = client.post(
+        f"/api/v1/exp/{slug}/event",
+        json={
+            "event_type": EVENT_VIEW,
+            "session_id": "sid",
+            "utm_source": "reddit",
+            "utm_campaign": "round1",
+            "utm_content": "creative-a",
+        },
+    )
     assert r.status_code == 200 and r.json()["ok"] is True
     # bad type → ok:false, still 200
     r2 = client.post(f"/api/v1/exp/{slug}/event", json={"event_type": "bogus"})

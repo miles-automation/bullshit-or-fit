@@ -27,6 +27,7 @@ function utm() {
   return {
     utm_source: p.get("utm_source"),
     utm_campaign: p.get("utm_campaign"),
+    utm_content: p.get("utm_content"),
     referrer: document.referrer || null,
   };
 }
@@ -147,6 +148,11 @@ export function ConceptLanding({ slug }: { slug: string }) {
 
         <section id="reserve" className="section-shell form-section">
           <div className="form-intro">
+            {reserveTier && !reserved && (
+              <p className="badge" role="status">
+                {`${reserveTier} isn't available yet — we're gauging interest before we build it. You have not been charged.`}
+              </p>
+            )}
             <h2>{reserved ? "You're on the list" : "Reserve your spot"}</h2>
             <p>
               {reserved

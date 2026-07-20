@@ -55,6 +55,7 @@ class EventIn(BaseModel):
     session_id: str | None = None
     utm_source: str | None = None
     utm_campaign: str | None = None
+    utm_content: str | None = None  # the ad creative
     referrer: str | None = None
 
 
@@ -121,6 +122,7 @@ def record_event(
             session_id=payload.session_id,
             utm_source=payload.utm_source,
             utm_campaign=payload.utm_campaign,
+            utm_content=payload.utm_content,
             referrer=payload.referrer,
         )
     except Exception:  # noqa: BLE001 — event logging must not break the ad page

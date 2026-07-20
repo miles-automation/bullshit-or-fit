@@ -12,10 +12,16 @@ that lands on Stripe is ~100× more predictive.
   Payment Link) — clicking it logs `intent` and sends the visitor to real checkout.
   A concept with no link falls back to the email "reserve" flow (weaker signal).
 - Events (`view`, `intent`, `reserve`) land in `experiments.experiment_event`,
-  tagged with the UTM params so each ad/channel/concept is separable. Logging is
-  best-effort: a down DB must not break the landing page.
-- `/exp` reads `experiment_summary` → per-concept funnel + intent-rate. Cost-per-
-  intent = your ad spend ÷ intents (spend comes from the ad platform).
+  tagged with the UTM params so each ad/channel/creative/concept is separable.
+  Logging is best-effort: a down DB must not break the landing page.
+- The label must be interpretable later, so the server stamps each event with what
+  was true AT CLICK TIME: the price shown (tiers are code config — a repriced tier
+  must not silently re-price historical intents), the concept version, and the
+  provenance ref joining the outcome back to the candidate + experiment that
+  selected the concept (see `Provenance`).
+- `/exp` reads `experiment_summary` → per-concept funnel + intent-rate, counted in
+  UNIQUE SESSIONS (one person clicking twice is one intent). Cost-per-intent =
+  your ad spend ÷ intents (spend comes from the ad platform).
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Text, func, select
+from sqlalchemy import BigInteger, DateTime, Integer, Text, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.db import Base
@@ -43,13 +49,23 @@ class ExperimentEvent(Base):
     __tablename__ = "experiment_event"
     __table_args__ = {"schema": SCHEMA}
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BIGINT on Postgres; plain INTEGER on SQLite so in-memory tests autoincrement
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     concept_slug: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
     tier: Mapped[str | None] = mapped_column(Text)
+    # Stamped server-side at log time — the observation, not re-derivable config:
+    price_shown: Mapped[str | None] = mapped_column(Text)  # e.g. "$29/mo"
+    concept_version: Mapped[int | None] = mapped_column(BigInteger)
+    candidate_ref: Mapped[str | None] = mapped_column(Text)  # joins to the selector
     session_id: Mapped[str | None] = mapped_column(Text)
     utm_source: Mapped[str | None] = mapped_column(Text)
     utm_campaign: Mapped[str | None] = mapped_column(Text)
+    utm_content: Mapped[str | None] = mapped_column(Text)  # the ad creative
     referrer: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
@@ -74,6 +90,26 @@ class Tier:
 
 
 @dataclass(frozen=True)
+class Provenance:
+    """The join from a fake-door outcome back to the candidate + experiment that
+    selected the concept (contract clause 6). Stored as DATA — `ref` is stamped on
+    every event — so a click can label the shot features that produced it. The
+    concept slug equals `slugify(shot.domain)` on the spark-swarm side (see
+    shot_pipeline.py there): `candidate` is that shared key, `experiment`
+    identifies the selection run."""
+
+    experiment: str  # which selector run picked this concept
+    candidate: str  # the shot's domain key (== the concept slug, by construction)
+    features: dict[str, float]  # the shot features the outcome will label
+    sources: tuple[str, ...]  # evidence sources behind the shot
+
+    @property
+    def ref(self) -> str:
+        """The compact reference stored on each event."""
+        return f"{self.experiment}#{self.candidate}"
+
+
+@dataclass(frozen=True)
 class Concept:
     slug: str
     name: str  # internal label for the readout
@@ -83,8 +119,13 @@ class Concept:
     bullets: list[str]
     how_it_works: list[str]
     tiers: list[Tier]
+    provenance: Provenance
+    version: int = 1  # bump on ANY copy/pricing change so labels stay comparable
     active: bool = True
     accent: str | None = None  # optional hex for per-concept theming
+
+    def find_tier(self, name: str | None) -> Tier | None:
+        return next((t for t in self.tiers if t.name == name), None)
 
 
 # ROUND 1 concepts, surfaced by the venture machine's shot-ranker (spark-swarm,
@@ -95,11 +136,12 @@ class Concept:
 # Round 1 = intent only: no checkout_url, honest "Get early access" CTA. The ad test
 # picks the winner, not us.
 #
-# Provenance (slug -> shot features), the join key for the outcome->training loop:
-#   document-data-extraction        ev 0.268  wtp 1.0 dist 0.90 sat 1.0  gigs+n8n+complaints
-#   bookkeeping-invoice-automation  ev 0.268  wtp 1.0 dist 0.90 sat 1.0  gigs+complaints
-#   lead-generation-research        ev 0.217  wtp 1.0 dist 0.90 sat 1.0  gigs+n8n+complaints
-# (sat 1.0 = crowded; these are "take a slice with faster execution" shots, not open fields.)
+# Provenance caveat: the round-1 selector is the OLD shot-ranker, which ran BEFORE the
+# participation compiler was frozen and corrected. These labels will say whether gig-fed
+# concepts convert; they will NOT validate the compiler, which did not select them.
+# (saturation 1.0 = crowded; "take a slice with faster execution" shots, not open fields.)
+_ROUND1 = "spark-swarm/venture-ideator-founder-fit:shot-ranker/round-1"
+
 CONCEPTS: list[Concept] = [
     Concept(
         slug="document-data-extraction",
@@ -124,6 +166,12 @@ CONCEPTS: list[Concept] = [
             Tier("Solo", "$29/mo", "For one person, the core workflow"),
             Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
+        provenance=Provenance(
+            experiment=_ROUND1,
+            candidate="document-data-extraction",
+            features={"ev": 0.268, "wtp": 1.0, "distribution": 0.90, "saturation": 1.0},
+            sources=("gigs", "n8n", "complaints"),
+        ),
     ),
     Concept(
         slug="bookkeeping-invoice-automation",
@@ -148,6 +196,12 @@ CONCEPTS: list[Concept] = [
             Tier("Solo", "$29/mo", "For one person, the core workflow"),
             Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
+        provenance=Provenance(
+            experiment=_ROUND1,
+            candidate="bookkeeping-invoice-automation",
+            features={"ev": 0.268, "wtp": 1.0, "distribution": 0.90, "saturation": 1.0},
+            sources=("gigs", "complaints"),
+        ),
     ),
     Concept(
         slug="lead-generation-research",
@@ -172,6 +226,12 @@ CONCEPTS: list[Concept] = [
             Tier("Solo", "$29/mo", "For one person, the core workflow"),
             Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
+        provenance=Provenance(
+            experiment=_ROUND1,
+            candidate="lead-generation-research",
+            features={"ev": 0.217, "wtp": 1.0, "distribution": 0.90, "saturation": 1.0},
+            sources=("gigs", "n8n", "complaints"),
+        ),
     ),
 ]
 
@@ -199,20 +259,31 @@ def log_event(
     session_id: str | None = None,
     utm_source: str | None = None,
     utm_campaign: str | None = None,
+    utm_content: str | None = None,
     referrer: str | None = None,
 ) -> bool:
     """Append one funnel event. Returns False (no raise) on a bad type so a caller
-    on the hot landing-page path never breaks the render."""
-    if event_type not in EVENT_TYPES or concept_slug not in _BY_SLUG:
+    on the hot landing-page path never breaks the render.
+
+    Price, concept version, and candidate ref are stamped SERVER-SIDE from the
+    concept config live at log time (the same config the page just rendered from):
+    the price stored is the price shown, even after a later repricing edit."""
+    concept = _BY_SLUG.get(concept_slug)
+    if event_type not in EVENT_TYPES or concept is None:
         return False
+    t = concept.find_tier(tier)
     session.add(
         ExperimentEvent(
             concept_slug=concept_slug,
             event_type=event_type,
             tier=tier,
+            price_shown=t.price if t else None,
+            concept_version=concept.version,
+            candidate_ref=concept.provenance.ref,
             session_id=session_id,
             utm_source=utm_source,
             utm_campaign=utm_campaign,
+            utm_content=utm_content,
             referrer=referrer,
         )
     )
@@ -232,15 +303,23 @@ class ConceptFunnel:
 
 def experiment_summary(session: Session) -> list[ConceptFunnel]:
     """Per-concept funnel from the event log, ranked by intent-rate. This is what
-    tells you which concept to build — highest payment-intent per view."""
+    tells you which concept to build — highest payment-intent per view.
+
+    Counts are UNIQUE SESSIONS per event type, not raw events: one person clicking
+    the CTA twice is one intent. Events without a session_id can't be deduplicated,
+    so each counts once (the frontend's localStorage-blocked fallback sid "anon"
+    is a shared key and will under-count; that bias is the safe direction for the
+    money metric)."""
     counts: dict[str, dict[str, int]] = {
         c.slug: {EVENT_VIEW: 0, EVENT_INTENT: 0, EVENT_RESERVE: 0} for c in CONCEPTS
     }
+    # distinct non-null sessions + one per session-less row, in a single pass
     for slug, etype, n in session.execute(
         select(
             ExperimentEvent.concept_slug,
             ExperimentEvent.event_type,
-            func.count(),
+            func.count(func.distinct(ExperimentEvent.session_id))
+            + func.count().filter(ExperimentEvent.session_id.is_(None)),
         ).group_by(ExperimentEvent.concept_slug, ExperimentEvent.event_type)
     ).all():
         if slug in counts and etype in counts[slug]:
