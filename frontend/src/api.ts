@@ -472,6 +472,7 @@ export interface ExpConcept {
   how_it_works: string[];
   tiers: ExpTier[];
   accent: string | null;
+  version: number;
 }
 
 export interface ExpFunnel {
@@ -486,9 +487,12 @@ export interface ExpFunnel {
 export interface ExpEventIn {
   event_type: "view" | "intent" | "reserve";
   tier?: string | null;
+  price_shown?: string | null; // the price the page actually rendered
+  concept_version?: number | null;
   session_id?: string | null;
   utm_source?: string | null;
   utm_campaign?: string | null;
+  utm_content?: string | null;
   referrer?: string | null;
 }
 

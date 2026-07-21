@@ -12,18 +12,31 @@ that lands on Stripe is ~100× more predictive.
   Payment Link) — clicking it logs `intent` and sends the visitor to real checkout.
   A concept with no link falls back to the email "reserve" flow (weaker signal).
 - Events (`view`, `intent`, `reserve`) land in `experiments.experiment_event`,
-  tagged with the UTM params so each ad/channel/concept is separable. Logging is
-  best-effort: a down DB must not break the landing page.
-- `/exp` reads `experiment_summary` → per-concept funnel + intent-rate. Cost-per-
-  intent = your ad spend ÷ intents (spend comes from the ad platform).
+  tagged with the UTM params so each ad/channel/creative/concept is separable.
+  Logging is best-effort: a down DB must not break the landing page.
+- The label must be interpretable later, so each event stores what the visitor
+  actually SAW: the page echoes back the price + concept version it rendered
+  (server config at log time is only the fallback — tiers are code config, and a
+  redeploy between page load and click must not re-price the observation), plus
+  the provenance ref joining the outcome back to the candidate + experiment that
+  selected the concept (see `Provenance`). `version` is derived from the
+  append-only fingerprint ledger in the tests — appending IS the bump.
+- `/exp` reads `experiment_summary` → per-concept funnel + intent-rate, counted in
+  UNIQUE SESSIONS (one person clicking twice is one intent) and scoped to the
+  concept's CURRENT version (a bump = a new experiment; pre-instrument NULL-version
+  rows are excluded). Cost-per-intent = your ad spend ÷ intents (spend comes from
+  the ad platform).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
-from sqlalchemy import BigInteger, DateTime, Text, func, select
+from sqlalchemy import BigInteger, DateTime, Integer, Text, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.db import Base
@@ -43,13 +56,24 @@ class ExperimentEvent(Base):
     __tablename__ = "experiment_event"
     __table_args__ = {"schema": SCHEMA}
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BIGINT on Postgres; plain INTEGER on SQLite so in-memory tests autoincrement
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     concept_slug: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
     tier: Mapped[str | None] = mapped_column(Text)
+    # The impression as observed: client-echoed, server-filled when absent —
+    # never re-derived from current config after the fact:
+    price_shown: Mapped[str | None] = mapped_column(Text)  # e.g. "$29/mo"
+    concept_version: Mapped[int | None] = mapped_column(BigInteger)
+    candidate_ref: Mapped[str | None] = mapped_column(Text)  # joins to the selector
     session_id: Mapped[str | None] = mapped_column(Text)
     utm_source: Mapped[str | None] = mapped_column(Text)
     utm_campaign: Mapped[str | None] = mapped_column(Text)
+    utm_content: Mapped[str | None] = mapped_column(Text)  # the ad creative
     referrer: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
@@ -74,6 +98,26 @@ class Tier:
 
 
 @dataclass(frozen=True)
+class Provenance:
+    """The join from a fake-door outcome back to the candidate + experiment that
+    selected the concept (contract clause 6). Stored as DATA — `ref` is stamped on
+    every event — so a click can label the shot features that produced it. The
+    concept slug equals `slugify(shot.domain)` on the spark-swarm side (see
+    shot_pipeline.py there): `candidate` is that shared key, `experiment`
+    identifies the selection run."""
+
+    experiment: str  # which selector run picked this concept
+    candidate: str  # the shot's domain key (== the concept slug, by construction)
+    features: dict[str, float]  # the shot features the outcome will label
+    sources: tuple[str, ...]  # evidence sources behind the shot
+
+    @property
+    def ref(self) -> str:
+        """The compact reference stored on each event."""
+        return f"{self.experiment}#{self.candidate}"
+
+
+@dataclass(frozen=True)
 class Concept:
     slug: str
     name: str  # internal label for the readout
@@ -83,8 +127,16 @@ class Concept:
     bullets: list[str]
     how_it_works: list[str]
     tiers: list[Tier]
+    provenance: Provenance
+    # version == length of this slug's entry in tests' _FINGERPRINT_LEDGER
+    # (append-only): any copy/pricing change appends a fingerprint there, and
+    # appending IS the bump. Enforced by the ledger test.
+    version: int = 1
     active: bool = True
     accent: str | None = None  # optional hex for per-concept theming
+
+    def find_tier(self, name: str | None) -> Tier | None:
+        return next((t for t in self.tiers if t.name == name), None)
 
 
 # ROUND 1 concepts, surfaced by the venture machine's shot-ranker (spark-swarm,
@@ -95,11 +147,12 @@ class Concept:
 # Round 1 = intent only: no checkout_url, honest "Get early access" CTA. The ad test
 # picks the winner, not us.
 #
-# Provenance (slug -> shot features), the join key for the outcome->training loop:
-#   document-data-extraction        ev 0.268  wtp 1.0 dist 0.90 sat 1.0  gigs+n8n+complaints
-#   bookkeeping-invoice-automation  ev 0.268  wtp 1.0 dist 0.90 sat 1.0  gigs+complaints
-#   lead-generation-research        ev 0.217  wtp 1.0 dist 0.90 sat 1.0  gigs+n8n+complaints
-# (sat 1.0 = crowded; these are "take a slice with faster execution" shots, not open fields.)
+# Provenance caveat: the round-1 selector is the OLD shot-ranker, which ran BEFORE the
+# participation compiler was frozen and corrected. These labels will say whether gig-fed
+# concepts convert; they will NOT validate the compiler, which did not select them.
+# (saturation 1.0 = crowded; "take a slice with faster execution" shots, not open fields.)
+_ROUND1 = "spark-swarm/venture-ideator-founder-fit:shot-ranker/round-1"
+
 CONCEPTS: list[Concept] = [
     Concept(
         slug="document-data-extraction",
@@ -124,6 +177,12 @@ CONCEPTS: list[Concept] = [
             Tier("Solo", "$29/mo", "For one person, the core workflow"),
             Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
+        provenance=Provenance(
+            experiment=_ROUND1,
+            candidate="document-data-extraction",
+            features={"ev": 0.268, "wtp": 1.0, "distribution": 0.90, "saturation": 1.0},
+            sources=("gigs", "n8n", "complaints"),
+        ),
     ),
     Concept(
         slug="bookkeeping-invoice-automation",
@@ -148,6 +207,12 @@ CONCEPTS: list[Concept] = [
             Tier("Solo", "$29/mo", "For one person, the core workflow"),
             Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
+        provenance=Provenance(
+            experiment=_ROUND1,
+            candidate="bookkeeping-invoice-automation",
+            features={"ev": 0.268, "wtp": 1.0, "distribution": 0.90, "saturation": 1.0},
+            sources=("gigs", "complaints"),
+        ),
     ),
     Concept(
         slug="lead-generation-research",
@@ -172,10 +237,52 @@ CONCEPTS: list[Concept] = [
             Tier("Solo", "$29/mo", "For one person, the core workflow"),
             Tier("Business", "$79/mo", "Higher volume + exports/integrations"),
         ],
+        provenance=Provenance(
+            experiment=_ROUND1,
+            candidate="lead-generation-research",
+            features={"ev": 0.217, "wtp": 1.0, "distribution": 0.90, "saturation": 1.0},
+            sources=("gigs", "n8n", "complaints"),
+        ),
     ),
 ]
 
 _BY_SLUG = {c.slug: c for c in CONCEPTS}
+
+
+# The shared landing-page chrome (frontend/src/ConceptLanding.tsx: "Early-access
+# pricing", the interest-gauging/no-charge copy around the CTA and reserve flow)
+# is part of what every visitor saw. page_chrome.json holds the sha256 of the
+# page's full visible text across its three states; the frontend test COMPUTES
+# that hash from the rendered page and asserts it matches, so a copy edit can
+# only be fixed by updating the JSON — which changes every concept fingerprint
+# below and breaks every version pin. The chrome→version link is mechanical,
+# not an instruction. Chrome change = a new experiment everywhere.
+PAGE_CHROME_HASH: str = json.loads(
+    (Path(__file__).parent / "page_chrome.json").read_text()
+)["text_sha256"]
+
+
+def content_fingerprint(c: Concept) -> str:
+    """Stable hash of everything a visitor can see on the landing page. Recorded
+    in tests/test_experiments.py's append-only _FINGERPRINT_LEDGER, whose length
+    IS the concept's version: editing copy or pricing without appending (and so
+    bumping) fails the ledger test — `version` is derived, not aspirational."""
+    payload = json.dumps(
+        {
+            "page_chrome": PAGE_CHROME_HASH,
+            "badge": c.badge,
+            "headline": c.headline,
+            "subhead": c.subhead,
+            "bullets": c.bullets,
+            "how_it_works": c.how_it_works,
+            "tiers": [
+                [t.name, t.price, t.blurb, t.cta_label, t.checkout_url] for t in c.tiers
+            ],
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def active_concepts() -> list[Concept]:
@@ -196,23 +303,68 @@ def log_event(
     concept_slug: str,
     event_type: str,
     tier: str | None = None,
+    price_shown: str | None = None,
+    concept_version: int | None = None,
     session_id: str | None = None,
     utm_source: str | None = None,
     utm_campaign: str | None = None,
+    utm_content: str | None = None,
     referrer: str | None = None,
 ) -> bool:
     """Append one funnel event. Returns False (no raise) on a bad type so a caller
-    on the hot landing-page path never breaks the render."""
-    if event_type not in EVENT_TYPES or concept_slug not in _BY_SLUG:
+    on the hot landing-page path never breaks the render.
+
+    `price_shown`/`concept_version` are the CLIENT'S echo of the impression it
+    rendered (the page sends back what it fetched). The impression is the
+    observation: if a deploy repriced the concept between page load and click, the
+    echo is right and current config is wrong. An `intent` — the money metric —
+    MUST carry the full echo (tier + price + version): an intent whose price
+    cannot be attested is rejected, never relabeled from current config. The
+    tier is validated against current config only when the echoed version IS
+    current; a stale-version echo stands on its own (see inline comment).
+    For view/reserve, missing fields fall back to current config only when the
+    echoed version IS current (otherwise price stays NULL — honestly unknown).
+    These fields are as unauthenticated as the click itself — this instruments
+    our own ad traffic, it is not a ledger. `candidate_ref` is server-stamped:
+    a slug's provenance is IMMUTABLE (pinned in tests — a different selector run
+    means a NEW slug), so current config is always the right ref."""
+    concept = _BY_SLUG.get(concept_slug)
+    if event_type not in EVENT_TYPES or concept is None:
         return False
+    if concept_version is not None and concept_version < 1:
+        return False  # versions start at 1; a malformed echo is not an observation
+    price_shown = price_shown or None
+    t = concept.find_tier(tier)
+    if event_type == EVENT_INTENT:
+        if tier is None or price_shown is None or concept_version is None:
+            return False  # unattested intent: not a purchase-intent label
+        if concept_version == concept.version and t is None:
+            # The page claims CURRENT config but names a tier it doesn't have —
+            # junk, reject. A STALE-version echo whose tier no longer resolves
+            # (renamed/removed in a later deploy) is kept: the full echo IS the
+            # observation, and dropping it would lose the exact deploy-skew
+            # click the echo exists to preserve.
+            return False
+    if (
+        price_shown is None
+        and t is not None
+        and concept_version in (None, concept.version)
+    ):
+        price_shown = t.price
     session.add(
         ExperimentEvent(
             concept_slug=concept_slug,
             event_type=event_type,
             tier=tier,
+            price_shown=price_shown,
+            concept_version=(
+                concept_version if concept_version is not None else concept.version
+            ),
+            candidate_ref=concept.provenance.ref,
             session_id=session_id,
             utm_source=utm_source,
             utm_campaign=utm_campaign,
+            utm_content=utm_content,
             referrer=referrer,
         )
     )
@@ -232,18 +384,45 @@ class ConceptFunnel:
 
 def experiment_summary(session: Session) -> list[ConceptFunnel]:
     """Per-concept funnel from the event log, ranked by intent-rate. This is what
-    tells you which concept to build — highest payment-intent per view."""
+    tells you which concept to build — highest payment-intent per view.
+
+    Counts are UNIQUE SESSIONS per event type, not raw events: one person clicking
+    the CTA twice is one intent. Events without a session_id can't be deduplicated,
+    so each counts once (over-count, never collapse).
+
+    Only events from the concept's CURRENT version count — a version bump is new
+    copy/pricing, i.e. a new experiment, so the funnel resets rather than blending
+    incomparable labels. Rows with a NULL version (logged before this
+    instrumentation existed) are EXCLUDED: their prices are unattested and their
+    session ids used the old persistent-visitor semantics, so blending them
+    would corrupt the funnel they predate. They — and older versions — stay in
+    the table for direct SQL."""
     counts: dict[str, dict[str, int]] = {
         c.slug: {EVENT_VIEW: 0, EVENT_INTENT: 0, EVENT_RESERVE: 0} for c in CONCEPTS
     }
-    for slug, etype, n in session.execute(
+    # distinct non-null sessions + one per session-less row, in a single pass
+    for slug, etype, ver, n in session.execute(
         select(
             ExperimentEvent.concept_slug,
             ExperimentEvent.event_type,
-            func.count(),
-        ).group_by(ExperimentEvent.concept_slug, ExperimentEvent.event_type)
+            ExperimentEvent.concept_version,
+            func.count(func.distinct(ExperimentEvent.session_id))
+            + func.count().filter(ExperimentEvent.session_id.is_(None)),
+        )
+        .where(ExperimentEvent.concept_version.is_not(None))
+        .group_by(
+            ExperimentEvent.concept_slug,
+            ExperimentEvent.event_type,
+            ExperimentEvent.concept_version,
+        )
     ).all():
-        if slug in counts and etype in counts[slug]:
+        c = _BY_SLUG.get(slug)
+        if (
+            c is not None
+            and ver is not None
+            and int(ver) == c.version
+            and etype in counts[slug]
+        ):
             counts[slug][etype] = int(n)
 
     out: list[ConceptFunnel] = []

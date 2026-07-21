@@ -41,6 +41,7 @@ class ConceptOut(BaseModel):
     how_it_works: list[str]
     tiers: list[TierOut]
     accent: str | None
+    version: int  # echoed back on events so the label matches the impression
 
 
 class ConceptCardOut(BaseModel):
@@ -52,9 +53,13 @@ class ConceptCardOut(BaseModel):
 class EventIn(BaseModel):
     event_type: str  # view | intent | reserve
     tier: str | None = None
+    # The impression echo: what the page actually rendered (see log_event docstring)
+    price_shown: str | None = None
+    concept_version: int | None = None
     session_id: str | None = None
     utm_source: str | None = None
     utm_campaign: str | None = None
+    utm_content: str | None = None  # the ad creative
     referrer: str | None = None
 
 
@@ -86,6 +91,7 @@ def _concept_out(c) -> ConceptOut:  # noqa: ANN001 — internal Concept dataclas
         how_it_works=c.how_it_works,
         tiers=[TierOut(**t.__dict__) for t in c.tiers],
         accent=c.accent,
+        version=c.version,
     )
 
 
@@ -118,9 +124,12 @@ def record_event(
             concept_slug=slug,
             event_type=payload.event_type,
             tier=payload.tier,
+            price_shown=payload.price_shown,
+            concept_version=payload.concept_version,
             session_id=payload.session_id,
             utm_source=payload.utm_source,
             utm_campaign=payload.utm_campaign,
+            utm_content=payload.utm_content,
             referrer=payload.referrer,
         )
     except Exception:  # noqa: BLE001 — event logging must not break the ad page

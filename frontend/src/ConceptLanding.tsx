@@ -7,18 +7,29 @@ import {
   submitLead,
 } from "./api";
 
-// Stable per-visitor id so a `view` and a later `intent` join into one funnel.
-function sessionId(): string {
+// Session-scoped id so a `view` and a later `intent` in the same visit dedupe
+// into one funnel entry. sessionStorage, not localStorage: a returning visitor
+// is a new session (a fresh look at the price is a fresh observation), and a
+// permanent id would collapse visits across campaigns. When storage is blocked,
+// fall back to an in-memory id — it still dedupes THIS page visit (a shared
+// sentinel would collapse strangers; null would let a double-click count twice).
+let memorySid: string | null = null;
+function sessionId(): string | null {
   try {
     const k = "bof_exp_sid";
-    let v = localStorage.getItem(k);
+    let v = sessionStorage.getItem(k);
     if (!v) {
       v = crypto.randomUUID();
-      localStorage.setItem(k, v);
+      sessionStorage.setItem(k, v);
     }
     return v;
   } catch {
-    return "anon";
+    try {
+      if (!memorySid) memorySid = crypto.randomUUID();
+      return memorySid;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -27,6 +38,7 @@ function utm() {
   return {
     utm_source: p.get("utm_source"),
     utm_campaign: p.get("utm_campaign"),
+    utm_content: p.get("utm_content"),
     referrer: document.referrer || null,
   };
 }
@@ -45,14 +57,27 @@ export function ConceptLanding({ slug }: { slug: string }) {
       .then((c) => {
         setConcept(c);
         // The visit itself — one per page load.
-        logExpEvent(slug, { event_type: "view", session_id: sid, ...ctx });
+        logExpEvent(slug, {
+          event_type: "view",
+          concept_version: c.version,
+          session_id: sid,
+          ...ctx,
+        });
       })
       .catch(() => setError(true));
   }, [slug, sid, ctx]);
 
-  // The money metric: a click THROUGH a real price.
+  // The money metric: a click THROUGH a real price. Echo the impression the
+  // visitor actually saw (price + version) so the label survives a redeploy.
   function onPickTier(t: ExpTier) {
-    logExpEvent(slug, { event_type: "intent", tier: t.name, session_id: sid, ...ctx });
+    logExpEvent(slug, {
+      event_type: "intent",
+      tier: t.name,
+      price_shown: t.price,
+      concept_version: concept?.version ?? null,
+      session_id: sid,
+      ...ctx,
+    });
     if (t.checkout_url) {
       window.location.href = t.checkout_url; // real Stripe checkout
     } else {
@@ -66,7 +91,19 @@ export function ConceptLanding({ slug }: { slug: string }) {
   async function onReserve(e: React.FormEvent) {
     e.preventDefault();
     if (!email) return;
-    logExpEvent(slug, { event_type: "reserve", tier: reserveTier, session_id: sid, ...ctx });
+    // Echo the reserved tier's displayed price too — otherwise the backend
+    // would fill it from CURRENT config, which can pair an old version with a
+    // new price after a redeploy.
+    const reservedPrice =
+      concept?.tiers.find((t) => t.name === reserveTier)?.price ?? null;
+    logExpEvent(slug, {
+      event_type: "reserve",
+      tier: reserveTier,
+      price_shown: reservedPrice,
+      concept_version: concept?.version ?? null,
+      session_id: sid,
+      ...ctx,
+    });
     try {
       await submitLead({
         name: "waitlist",
@@ -147,6 +184,11 @@ export function ConceptLanding({ slug }: { slug: string }) {
 
         <section id="reserve" className="section-shell form-section">
           <div className="form-intro">
+            {reserveTier && !reserved && (
+              <p className="badge" role="status">
+                {`${reserveTier} isn't available yet — we're gauging interest before we build it. You have not been charged.`}
+              </p>
+            )}
             <h2>{reserved ? "You're on the list" : "Reserve your spot"}</h2>
             <p>
               {reserved
