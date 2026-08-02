@@ -50,5 +50,12 @@ class Settings(BaseSettings):
     # dataset is a few thousand rows, so one request covers it).
     warn_max_records: int = 50000
 
+    # --- Source-freshness alerting ---
+    # Scoped Spark Swarm key (project=bullshit-or-fit) used ONLY to POST staleness
+    # transitions to /api/v1/events; an `incident` event is what makes Spark Swarm
+    # send the Matrix ops message. Empty = detection still runs and logs, but no
+    # notification is sent (dev/local default).
+    bullshit_or_fit_ss_api_key: str = ""
+
 
 settings = Settings()

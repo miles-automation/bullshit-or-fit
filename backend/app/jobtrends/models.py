@@ -462,3 +462,37 @@ class CompSourceStat(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SourceHealth(Base):
+    """Per-source freshness state — the spine of the staleness alert.
+
+    A snapshot source that stops fetching fails **silently**. Every connector
+    deliberately logs a warning and skips `close_missing` on a fetch error (so a
+    transient block can't flip an entire source's roles to closed) — correct for
+    the data, but it makes a total outage externally indistinguishable from a
+    healthy run. USAJobs was dead for 16 days (2026-07-17 → 2026-08-02) for
+    exactly this reason: tinyproxy on the residential-egress box lost a boot race
+    against WireGuard, every tick logged a warning, and nothing surfaced it.
+
+    This table holds the edge-trigger state so the worker alerts once on the
+    ok→stale transition instead of re-alerting every tick, and so that state
+    survives container recreation (the ingest container is recreated by hand
+    whenever a migration ships).
+    """
+
+    __tablename__ = "source_health"
+    __table_args__ = {"schema": SCHEMA}
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    # 'ok' | 'stale' — the last state we NOTIFIED on, not a live computation.
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    # Freshest row observed for this source at the last check (None = never seen).
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When `state` last flipped — i.e. when the current incident began.
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
