@@ -83,7 +83,10 @@ if static_dir.exists():
     def serve_spa(path: str):
         if path.startswith("api/") or path in {"healthz", "api/v1/healthz"}:
             raise HTTPException(status_code=404, detail="Not found")
-        candidate = static_dir / path
-        if candidate.exists() and candidate.is_file():
+        # Contain within static_dir; `static_dir / "/abs"` collapses to the
+        # absolute path, which would leak arbitrary files.
+        candidate = (static_dir / path).resolve()
+        static_root = static_dir.resolve()
+        if candidate.is_relative_to(static_root) and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(static_dir / "index.html")
