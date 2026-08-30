@@ -69,6 +69,23 @@ app.include_router(experiments.router, prefix="/api/v1")
 
 # --- Static / SPA fallback ---
 
+
+def _safe_spa_file(static_root: Path, path: str) -> Path:
+    """Resolve a requested SPA path to a file inside ``static_root``.
+
+    ``static_root / path`` collapses to an absolute path when ``path`` is
+    absolute (e.g. ``//etc/passwd`` -> ``/etc/passwd``), and symlinks or
+    ``..`` segments can otherwise escape the static directory. Resolve the
+    candidate and require it to stay within the (resolved) static root
+    before serving it; anything else falls back to the SPA entrypoint.
+    """
+    candidate = (static_root / path).resolve()
+    root = static_root.resolve()
+    if candidate.is_relative_to(root) and candidate.is_file():
+        return candidate
+    return root / "index.html"
+
+
 static_dir = Path(__file__).resolve().parent.parent / "static"
 if static_dir.exists():
     assets_dir = static_dir / "assets"
@@ -83,10 +100,4 @@ if static_dir.exists():
     def serve_spa(path: str):
         if path.startswith("api/") or path in {"healthz", "api/v1/healthz"}:
             raise HTTPException(status_code=404, detail="Not found")
-        # Contain within static_dir; `static_dir / "/abs"` collapses to the
-        # absolute path, which would leak arbitrary files.
-        candidate = (static_dir / path).resolve()
-        static_root = static_dir.resolve()
-        if candidate.is_relative_to(static_root) and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(static_dir / "index.html")
+        return FileResponse(_safe_spa_file(static_dir, path))
