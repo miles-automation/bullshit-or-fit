@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "slug": "fuel-delivery-invoices",
+  "name": "Fuel delivery invoice extraction",
+  "kind": "pdf_to_table",
+  "source": {
+    "marketplace": "Upwork",
+    "url": "https://www.upwork.com/freelance-jobs/apply/Automation-Expert-Needed-PDF-Invoice-Extraction-Google-Sheets-Reconciliation-and-Error-Alerts_~022008876018364155/",
+    "observed_at": "2026-07-20",
+    "title": "PDF Invoice Extraction, Google Sheets Reconciliation, and Error Alerts",
+    "advertised_budget_usd": 200
+  },
+  "limits": {
+    "max_documents": 200,
+    "max_total_pages": 300,
+    "max_pages_per_document": 10,
+    "max_fields": 12,
+    "min_extracted_text_characters": 20
+  },
+  "acceptance": {
+    "max_required_exception_rate": 0.01
+  },
+  "output": {
+    "workbook_sheet": "Fuel Deliveries",
+    "include_source_page": true,
+    "include_field_status": true
+  },
+  "fields": [
+    {
+      "name": "invoice_number",
+      "label": "Invoice Number",
+      "patterns": [
+        "Invoice (?:Number|No\\.?)\\s*[:#-]\\s*(?P<value>[A-Z0-9-]+)"
+      ]
+    },
+    {
+      "name": "delivery_date",
+      "label": "Delivery Date",
+      "patterns": [
+        "Delivery Date\\s*[:#-]\\s*(?P<value>[0-9/-]+)"
+      ],
+      "value_type": "date"
+    },
+    {
+      "name": "fuel_grade",
+      "label": "Fuel Grade",
+      "patterns": [
+        "Fuel Grade\\s*[:#-]\\s*(?P<value>[^\\r\\n]+)"
+      ]
+    },
+    {
+      "name": "gallons",
+      "label": "Gallons Delivered",
+      "patterns": [
+        "Gallons(?: Delivered)?\\s*[:#-]\\s*(?P<value>[0-9,.]+)"
+      ],
+      "value_type": "decimal"
+    }
+  ]
+}

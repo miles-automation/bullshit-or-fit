@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "slug": "property-records",
+  "name": "County property records to spreadsheet",
+  "kind": "pdf_to_table",
+  "source": {
+    "marketplace": "Upwork",
+    "url": "https://www.upwork.com/freelance-jobs/apply/Data-Extraction-Specialist-for-PDF-Excel_~021999172318728578574/",
+    "observed_at": "2026-07-20",
+    "title": "Data Extraction Specialist for PDF to Excel",
+    "advertised_budget_usd": 50
+  },
+  "limits": {
+    "max_documents": 200,
+    "max_total_pages": 300,
+    "max_pages_per_document": 10,
+    "max_fields": 12,
+    "min_extracted_text_characters": 20
+  },
+  "acceptance": {
+    "max_required_exception_rate": 0.01
+  },
+  "output": {
+    "workbook_sheet": "Property Records",
+    "include_source_page": true,
+    "include_field_status": true
+  },
+  "fields": [
+    {
+      "name": "parcel_id",
+      "label": "Tax ID Number / Parcel ID",
+      "patterns": [
+        "(?:Tax ID Number|Parcel ID|Prop(?:erty)? No\\.?)\\s*[:#-]\\s*(?P<value>[A-Z0-9-]+)"
+      ],
+      "validation_pattern": "(?i)[a-z0-9-]{3,}"
+    },
+    {
+      "name": "address",
+      "label": "Address",
+      "patterns": [
+        "(?:Property )?Address\\s*[:#-]\\s*(?P<value>[^\\r\\n]+)"
+      ]
+    },
+    {
+      "name": "city",
+      "label": "City",
+      "patterns": [
+        "City\\s*[:#-]\\s*(?P<value>[A-Za-z .'-]+)"
+      ]
+    },
+    {
+      "name": "interested_parties",
+      "label": "Interested Parties",
+      "patterns": [
+        "Interested Part(?:y|ies)\\s*[:#-]\\s*(?P<value>[^\\r\\n]+)"
+      ]
+    }
+  ]
+}

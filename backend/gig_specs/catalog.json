@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "slug": "property-records",
+      "spec": "pdf/property-records.json",
+      "automation_status": "executable",
+      "demand_signal": "County property data from PDFs into one spreadsheet"
+    },
+    {
+      "slug": "fuel-delivery-invoices",
+      "spec": "pdf/fuel-delivery-invoices.json",
+      "automation_status": "executable",
+      "demand_signal": "Invoice extraction feeding reconciliation and alerts"
+    }
+  ]
+}

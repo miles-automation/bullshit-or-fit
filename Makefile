@@ -1,4 +1,4 @@
-.PHONY: install dev dev-backend dev-frontend test lint format format-check typecheck check build migrate new-migration jobtrends-ingest jobtrends-worker
+.PHONY: install dev dev-backend dev-frontend test lint format format-check typecheck check build migrate new-migration jobtrends-ingest jobtrends-worker gig-pdf-run
 
 install:
 	cd backend && uv sync --dev
@@ -45,6 +45,13 @@ jobtrends-ingest:
 
 jobtrends-worker:
 	cd backend && PYTHONPATH=. uv run python -m app.jobtrends.worker
+
+# Run one bounded PDF-to-table fulfillment job. Override SPEC, INPUT, and OUTPUT.
+gig-pdf-run:
+	cd backend && PYTHONPATH=. uv run python -m app.automations.cli pdf-run \
+		--spec $(or $(SPEC),gig_specs/pdf/property-records.json) \
+		--input $(or $(INPUT),incoming) \
+		--output $(or $(OUTPUT),deliveries)
 
 build:
 	docker build --platform linux/amd64 -t ghcr.io/miles-automation/bullshit-or-fit:latest .

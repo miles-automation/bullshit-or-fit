@@ -27,6 +27,13 @@ Backend health endpoints:
 make check
 ```
 
+## Gig-driven fulfillment automations
+
+Concrete paid marketplace asks are captured as executable specifications under
+`backend/gig_specs/`. The first operator runner converts a bounded PDF batch into
+an auditable XLSX delivery with per-field status, source-page provenance, an
+Exceptions sheet, and a JSON run manifest. See `docs/gig-automation.md`.
+
 ## Build
 
 ```bash
