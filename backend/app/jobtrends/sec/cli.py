@@ -23,8 +23,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("registry")
     ingest_parser = sub.add_parser("ingest")
     ingest_parser.add_argument("--cik", action="append", default=[])
-    ingest_parser.add_argument("--periods", type=int, choices=range(1, 6), default=2)
-    ingest_parser.add_argument("--max-filings", type=int, default=40)
+    ingest_parser.add_argument(
+        "--periods", type=int, choices=range(1, 6), default=settings.sec_periods
+    )
+    ingest_parser.add_argument(
+        "--max-filings", type=int, default=settings.sec_max_filings
+    )
     rebuild_parser = sub.add_parser("rebuild")
     rebuild_parser.add_argument("--cik")
     rebuild_parser.add_argument("--limit", type=int, default=200)

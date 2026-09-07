@@ -1,6 +1,7 @@
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -25,7 +26,7 @@ class SecClient:
             raise ValueError(
                 "SEC_CONTACT_EMAIL must contain an authorized contact email"
             )
-        if interval_seconds < 0.25:
+        if not math.isfinite(interval_seconds) or interval_seconds < 0.25:
             raise ValueError("SEC requests must be spaced by at least 0.25 seconds")
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -49,8 +50,16 @@ class SecClient:
         with (self.cache_dir / "request.lock").open("a+") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             lock.seek(0)
-            last = float(lock.read() or "0")
-            delay = self.interval_seconds - (time.monotonic() - last)
+            now = time.monotonic()
+            try:
+                last = float(lock.read())
+            except ValueError:
+                last = now
+            if not math.isfinite(last):
+                last = now
+            delay = min(
+                self.interval_seconds, max(0, self.interval_seconds - (now - last))
+            )
             if delay > 0:
                 time.sleep(delay)
             lock.seek(0)

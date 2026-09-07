@@ -101,6 +101,8 @@ def test_replay_amendment_rebuild_and_provenance(
         assert (
             session.scalar(select(func.count()).select_from(SecSignal)) == initial_count
         )
+        bounded = report(session, form="10-K", until=date(2025, 12, 31))
+        assert {row["accession"] for row in bounded["signals"]} == {ROWS[0][0]}
         result = report(
             session, since=date(2026, 1, 1), category="workforce_restructuring", limit=1
         )
@@ -464,3 +466,271 @@ def test_mixed_assertions_remain_unknown(sentence: str, category: str) -> None:
 def test_accounting_exclusion_does_not_negate_workforce_event() -> None:
     sentence = "Adjusted EBITDA does not include restructuring costs related to employee severance."
     assert extract(sentence, load_rules())[0].assertion == "unknown"
+
+
+@pytest.mark.parametrize(
+    "timestamp", ["2600000.0", "torn-write", "nan", "inf", "-inf", ""]
+)
+def test_stale_or_corrupt_shared_lock_repairs_with_bounded_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timestamp: str
+) -> None:
+    waits: list[float] = []
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(client_module.time, "sleep", waits.append)
+    lock = tmp_path / "request.lock"
+    lock.write_text(timestamp)
+    with SecClient(
+        "test@example.com",
+        tmp_path,
+        httpx.MockTransport(lambda request: httpx.Response(200, content=b"ok")),
+    ) as client:
+        assert client.fetch("https://www.sec.gov/test") == b"ok"
+    assert all(0 <= wait <= 0.5 for wait in waits)
+    assert float(lock.read_text()) == 100.0
+
+
+@pytest.mark.parametrize("interval", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_throttle_interval_rejected(tmp_path: Path, interval: float) -> None:
+    with pytest.raises(ValueError):
+        SecClient("test@example.com", tmp_path, interval_seconds=interval)
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Actual or perceived breaches could negatively affect our ability to attract and retain new customers.",
+        "We employ 100 employees. Uptime affects our ability to attract and retain customers.",
+    ],
+)
+def test_customer_retention_is_not_workforce_retention(sentence: str) -> None:
+    assert extract(sentence, load_rules()) == []
+
+
+def test_historical_workforce_reductions_with_future_growth_are_mixed() -> None:
+    sentence = "Although we have conducted workforce reductions in the past, we may experience employee growth in the future."
+    assert extract(sentence, load_rules())[0].assertion == "unknown"
+    assert (
+        extract("We have conducted workforce reductions in the past.", load_rules())[
+            0
+        ].assertion
+        == "reported_event"
+    )
+    assert (
+        extract(
+            "We may be unable to attract and retain highly qualified personnel.",
+            load_rules(),
+        )[0].category
+        == "hiring_retention_constraints"
+    )
+
+
+def test_unseen_issuer_progresses_ahead_of_permanent_retry(
+    session: Session, tmp_path: Path
+) -> None:
+    other = Issuer(
+        name="Other Company",
+        cik="0000000002",
+        verification_url="https://data.sec.gov/submissions/CIK0000000002.json",
+    )
+    other_rows = [
+        ("0000000002-25-000001", "10-K", "2025-02-01", "2024-12-31", "annual.htm")
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "data.sec.gov":
+            second = "CIK0000000002" in request.url.path
+            return httpx.Response(
+                200,
+                json={
+                    "cik": 2 if second else 1,
+                    "filings": {
+                        "recent": submissions(other_rows if second else ROWS[:1]),
+                        "files": [],
+                    },
+                },
+            )
+        return (
+            httpx.Response(200, content=BODY)
+            if "/data/2/" in request.url.path
+            else httpx.Response(404)
+        )
+
+    with SecClient(
+        "test@example.com", tmp_path, httpx.MockTransport(handler)
+    ) as client:
+        first = ingest(session, client, [ISSUER, other], load_rules(), max_filings=1)
+        assert first["failed"] == 1
+        second = ingest(session, client, [ISSUER, other], load_rules(), max_filings=1)
+        assert second["downloaded"] == 1
+        assert second["failed"] == 0
+        assert any(
+            row["cik"] == other.cik and row["bytes"] > 0 for row in second["filings"]
+        )
+
+
+def test_failed_metadata_refreshes_but_successful_provenance_is_frozen(
+    session: Session, tmp_path: Path
+) -> None:
+    current_row = (ROWS[0][0], "10-K", "2025-02-01", "2024-12-31", "wrong.htm")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "data.sec.gov":
+            return httpx.Response(
+                200,
+                json={
+                    "cik": 1,
+                    "filings": {"recent": submissions([current_row]), "files": []},
+                },
+            )
+        return (
+            httpx.Response(200, content=BODY)
+            if request.url.path.endswith("correct.htm")
+            else httpx.Response(404)
+        )
+
+    with SecClient(
+        "test@example.com", tmp_path, httpx.MockTransport(handler)
+    ) as client:
+        assert ingest(session, client, [ISSUER], load_rules())["failed"] == 1
+        for path in tmp_path.glob("*.json"):
+            path.unlink()
+        current_row = (ROWS[0][0], "10-K", "2025-02-02", "2024-12-30", "correct.htm")
+        assert ingest(session, client, [ISSUER], load_rules())["downloaded"] == 1
+        filing = session.get(SecFiling, ROWS[0][0])
+        assert filing is not None
+        assert filing.source_url.endswith("correct.htm")
+        assert filing.filing_date == date(2025, 2, 2)
+        assert filing.report_date == date(2024, 12, 30)
+        for path in tmp_path.glob("*.json"):
+            path.unlink()
+        current_row = (ROWS[0][0], "10-K", "2025-02-03", "2024-12-31", "later.htm")
+        assert ingest(session, client, [ISSUER], load_rules())["downloaded"] == 0
+        assert filing.source_url.endswith("correct.htm")
+        assert filing.filing_date == date(2025, 2, 2)
+
+
+def test_replay_does_not_transfer_raw_or_normalized_payloads(
+    session: Session, tmp_path: Path
+) -> None:
+    from sqlalchemy import event
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "data.sec.gov":
+            return httpx.Response(
+                200,
+                json={"cik": 1, "filings": {"recent": submissions(ROWS), "files": []}},
+            )
+        return httpx.Response(200, content=BODY)
+
+    columns: list[str] = []
+
+    def capture(
+        connection: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        columns.extend(column[0] for column in cursor.description or [])
+
+    with SecClient(
+        "test@example.com", tmp_path, httpx.MockTransport(handler)
+    ) as client:
+        ingest(session, client, [ISSUER], load_rules())
+        session.expunge_all()
+        engine = session.get_bind()
+        event.listen(engine, "after_cursor_execute", capture)
+        try:
+            assert ingest(session, client, [ISSUER], load_rules())["cached"] == 3
+        finally:
+            event.remove(engine, "after_cursor_execute", capture)
+    assert not any(
+        name.endswith(("raw_document", "normalized_text")) for name in columns
+    )
+
+
+def test_cli_uses_ingest_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from app.jobtrends.sec import cli
+
+    captured: list[tuple[int, int]] = []
+
+    def capture(
+        session: Any,
+        client: Any,
+        issuers: Any,
+        rules: Any,
+        periods: int,
+        max_filings: int,
+    ) -> dict[str, int]:
+        captured.append((periods, max_filings))
+        return {"failed": 0}
+
+    monkeypatch.setattr(cli.settings, "sec_periods", 3)
+    monkeypatch.setattr(cli.settings, "sec_max_filings", 1)
+    monkeypatch.setattr(cli, "SessionLocal", lambda: nullcontext(None))
+    monkeypatch.setattr(
+        cli,
+        "SecClient",
+        lambda *args: nullcontext(SimpleNamespace(requests=0, cache_hits=0)),
+    )
+    monkeypatch.setattr(cli, "ingest", capture)
+    assert cli.main(["ingest"]) == 0
+    assert captured == [(3, 1)]
+
+
+def test_worker_continues_derived_rebuild_when_sec_import_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import builtins
+    from contextlib import nullcontext
+    from app.jobtrends import worker
+
+    real_import = builtins.__import__
+    rebuilt: list[bool] = []
+
+    def unavailable_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("app.jobtrends."):
+            raise ImportError("test source unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(worker, "SessionLocal", lambda: nullcontext(None))
+    monkeypatch.setattr(worker, "HNAlgoliaClient", lambda: None)
+    monkeypatch.setattr(worker, "ingest_recent", lambda *args: {})
+    monkeypatch.setattr(worker, "rebuild_derived", lambda session: rebuilt.append(True))
+    monkeypatch.setattr(builtins, "__import__", unavailable_import)
+    worker._run_once(1)
+    assert rebuilt == [True]
+    assert "SEC source unavailable; continuing other sources" in caplog.text
+
+
+def test_discovery_reports_history_cap_and_incomplete_periods(tmp_path: Path) -> None:
+    files = [
+        {
+            "name": f"CIK0000000001-submissions-{index:03d}.json",
+            "filingTo": "2026-05-01",
+        }
+        for index in range(22)
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "submissions-" in request.url.path:
+            return httpx.Response(200, json=submissions(ROWS[1:2]))
+        return httpx.Response(
+            200,
+            json={
+                "cik": 1,
+                "filings": {"recent": submissions(ROWS[1:2]), "files": files},
+            },
+        )
+
+    with SecClient(
+        "test@example.com", tmp_path, httpx.MockTransport(handler)
+    ) as client:
+        refs, warnings = discover(client, ISSUER, 2)
+        assert client.requests == 21
+    assert len(refs) == 1
+    assert any("20 files" in warning for warning in warnings)
+    assert any("1 original annual" in warning for warning in warnings)

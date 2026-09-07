@@ -1,14 +1,16 @@
 {
-  "database": "PostgreSQL16, task-owned local container",
-  "raw_origin": "Copied original bytes and retrieval metadata from the successful first live SEC ingest; no document refetch.",
+  "validated_at": "2026-09-07T15:26:56.914838+00:00",
+  "database": "PostgreSQL16, fresh task-owned review database; migration chain through0016 applied",
+  "raw_origin": "Copied original bytes and retrieval metadata from first live SEC ingest; no document refetch.",
+  "extractor_version": "paragraph-candidates-v3:e5e7523572b8eb94",
   "first_rebuild": {
     "filings": 7,
-    "signals": 215,
+    "signals": 173,
     "failed": 0
   },
   "second_rebuild": {
     "filings": 7,
-    "signals": 215,
+    "signals": 173,
     "failed": 0
   },
   "replay": {
@@ -104,7 +106,9 @@
   "counts": {
     "filings": 7,
     "normalized_documents": 7,
-    "signals": 215
+    "signals": 173
   },
-  "exact_excerpt_and_raw_hash_checks": 215
+  "exact_excerpt_and_raw_hash_checks": 173,
+  "raw_file_hash_checks": 7,
+  "replay_payload_columns_absent": true
 }

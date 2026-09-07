@@ -4,13 +4,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, defer
 
 from app.config import settings
 from app.db import SessionLocal
 from app.jobtrends.sec.client import SecClient
-from app.jobtrends.sec.discovery import discover
+from app.jobtrends.sec.discovery import FilingRef, discover
 from app.jobtrends.sec.models import SecDocument, SecFiling, SecSignal
 from app.jobtrends.sec.registry import Issuer, load_registry
 from app.jobtrends.sec.text import (
@@ -90,6 +90,7 @@ def ingest(
         "warnings": [],
         "filings": [],
     }
+    candidates: list[tuple[Issuer, FilingRef, str | None]] = []
     for issuer in issuers:
         try:
             refs, warnings = discover(client, issuer, periods)
@@ -107,76 +108,108 @@ def ingest(
             if ref.form == "10-K":
                 originals.setdefault(ref.report_date, []).append(ref.accession)
         for ref in refs:
-            filing = session.get(SecFiling, ref.accession)
-            if (filing is None or filing.raw_document is None) and summary[
-                "download_attempts"
-            ] >= max_filings:
-                summary["warnings"].append(
-                    "max_filings download budget reached; rerun to resume"
-                )
-                return summary
-            if filing is None:
-                filing = SecFiling(
-                    accession=ref.accession,
-                    cik=issuer.cik,
-                    issuer_name=issuer.name,
-                    provider=issuer.provider,
-                    company_token=issuer.company_token,
-                    form=ref.form,
-                    filing_date=ref.filing_date,
-                    report_date=ref.report_date,
-                    source_url=ref.url(issuer.cik),
-                    attempted_at=datetime.now(UTC),
-                )
-                session.add(filing)
             original = originals.get(ref.report_date, [])
-            filing.original_accession = (
-                original[0] if ref.form == "10-K/A" and len(original) == 1 else None
+            candidates.append(
+                (
+                    issuer,
+                    ref,
+                    original[0]
+                    if ref.form == "10-K/A" and len(original) == 1
+                    else None,
+                )
             )
-            if filing.raw_document is None:
-                summary["download_attempts"] += 1
-                filing.attempted_at = datetime.now(UTC)
-                try:
-                    filing.raw_document = client.fetch(filing.source_url)
-                    filing.content_hash = hashlib.sha256(
-                        filing.raw_document
-                    ).hexdigest()
-                    filing.retrieved_at = datetime.now(UTC)
-                    filing.fetch_error = None
-                    summary["downloaded"] += 1
-                except Exception as exc:
-                    filing.fetch_error = str(exc)
-                    summary["failed"] += 1
-                    logger.warning("SEC filing %s failed: %s", ref.accession, exc)
-            else:
-                summary["cached"] += 1
+    stored_sizes: dict[str, int | None] = {
+        accession: size
+        for accession, size in session.execute(
+            select(SecFiling.accession, func.length(SecFiling.raw_document)).where(
+                SecFiling.accession.in_([ref.accession for _, ref, _ in candidates])
+            )
+        )
+    }
+    candidates.sort(
+        key=lambda candidate: (
+            0
+            if stored_sizes.get(candidate[1].accession) is not None
+            else 1
+            if candidate[1].accession not in stored_sizes
+            else 2
+        )
+    )
+    deferred = 0
+    for issuer, ref, original_accession in candidates:
+        raw_size = stored_sizes.get(ref.accession)
+        needs_download = raw_size is None
+        if needs_download and summary["download_attempts"] >= max_filings:
+            deferred += 1
+            continue
+        filing = session.scalar(
+            select(SecFiling)
+            .options(defer(SecFiling.raw_document))
+            .where(SecFiling.accession == ref.accession)
+        )
+        if filing is None:
+            filing = SecFiling(accession=ref.accession)
+            session.add(filing)
+        if needs_download:
+            filing.cik = issuer.cik
+            filing.issuer_name = issuer.name
+            filing.provider = issuer.provider
+            filing.company_token = issuer.company_token
+            filing.form = ref.form
+            filing.filing_date = ref.filing_date
+            filing.report_date = ref.report_date
+            filing.source_url = ref.url(issuer.cik)
+            filing.attempted_at = datetime.now(UTC)
+            summary["download_attempts"] += 1
+            try:
+                filing.raw_document = client.fetch(filing.source_url)
+                raw_size = len(filing.raw_document)
+                filing.content_hash = hashlib.sha256(filing.raw_document).hexdigest()
+                filing.retrieved_at = datetime.now(UTC)
+                filing.fetch_error = None
+                summary["downloaded"] += 1
+            except Exception as exc:
+                filing.fetch_error = str(exc)
+                summary["failed"] += 1
+                logger.warning("SEC filing %s failed: %s", ref.accession, exc)
+        else:
+            summary["cached"] += 1
+        filing.original_accession = original_accession
+        session.flush()
+        document = session.scalar(
+            select(SecDocument)
+            .options(defer(SecDocument.normalized_text))
+            .where(SecDocument.accession == ref.accession)
+        )
+        if raw_size is not None and (
+            document is None
+            or document.parser_version != PARSER_VERSION
+            or document.extractor_version != rules.fingerprint
+        ):
+            summary["signals_rebuilt"] += rebuild_filing(session, filing, rules)
             session.flush()
             document = session.get(SecDocument, ref.accession)
-            if filing.raw_document is not None and (
-                document is None
-                or document.parser_version != PARSER_VERSION
-                or document.extractor_version != rules.fingerprint
-            ):
-                summary["signals_rebuilt"] += rebuild_filing(session, filing, rules)
-                session.flush()
-                document = session.get(SecDocument, ref.accession)
-            if document is not None and document.parse_status != "ok":
-                summary["failed"] += 1
-            summary["filings"].append(
-                {
-                    "cik": issuer.cik,
-                    "accession": ref.accession,
-                    "form": ref.form,
-                    "filing_date": ref.filing_date.isoformat(),
-                    "report_date": ref.report_date.isoformat(),
-                    "source_url": filing.source_url,
-                    "bytes": len(filing.raw_document or b""),
-                    "parse_status": document.parse_status if document else "not_parsed",
-                    "error": filing.fetch_error
-                    or (document.parse_error if document else None),
-                }
-            )
-            session.commit()
+        if document is not None and document.parse_status != "ok":
+            summary["failed"] += 1
+        summary["filings"].append(
+            {
+                "cik": filing.cik,
+                "accession": filing.accession,
+                "form": filing.form,
+                "filing_date": filing.filing_date.isoformat(),
+                "report_date": filing.report_date.isoformat(),
+                "source_url": filing.source_url,
+                "bytes": raw_size or 0,
+                "parse_status": document.parse_status if document else "not_parsed",
+                "error": filing.fetch_error
+                or (document.parse_error if document else None),
+            }
+        )
+        session.commit()
+    if deferred:
+        summary["warnings"].append(
+            f"max_filings download budget reached; {deferred} deferred filings; rerun to resume"
+        )
     return summary
 
 

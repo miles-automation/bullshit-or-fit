@@ -52,7 +52,7 @@ class SecSignal(Base):
         Text, ForeignKey(f"{SCHEMA}.sec_filings.accession"), primary_key=True
     )
     paragraph_index: Mapped[int] = mapped_column(Integer, primary_key=True)
-    category: Mapped[str] = mapped_column(Text, primary_key=True)
+    category: Mapped[str] = mapped_column(Text, primary_key=True, index=True)
     extractor_version: Mapped[str] = mapped_column(Text)
     rule_id: Mapped[str] = mapped_column(Text)
     assertion: Mapped[str] = mapped_column(Text)

@@ -71,6 +71,13 @@ def upgrade() -> None:
         schema="jobtrends",
     )
 
+    op.create_index(
+        "ix_jobtrends_sec_signals_category",
+        "sec_signals",
+        ["category"],
+        schema="jobtrends",
+    )
+
 
 def downgrade() -> None:
     for table in ("sec_signals", "sec_documents", "sec_filings"):

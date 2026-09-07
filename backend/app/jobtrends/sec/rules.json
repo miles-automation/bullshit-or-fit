@@ -1,11 +1,11 @@
 {
-  "version": "paragraph-candidates-v2",
+  "version": "paragraph-candidates-v3",
   "rules": [
     {
       "id": "workforce-v1",
       "category": "workforce_restructuring",
       "pattern": "\\b(?:layoffs?|restructur(?:ing|e)|reduction in (?:our |the )?workforce|workforce reductions?|reduced (?:our )?(?:headcount|workforce)|severance (?:costs?|charges?))\\b",
-      "reported_pattern": "\\b(?:(?:announced|implemented|completed)\\b.{0,100}\\b(?:restructur\\w*|layoffs?|workforce reduction)|(?:reduced|eliminated)\\b.{0,80}\\b(?:headcount|workforce|positions)|(?:incurred|recorded)\\b.{0,80}\\b(?:restructuring|severance)\\b.{0,30}\\b(?:costs?|charges?))",
+      "reported_pattern": "\\b(?:(?:announced|implemented|completed|conducted|carried out)\\b.{0,100}\\b(?:restructur\\w*|layoffs?|workforce reduction)|(?:reduced|eliminated)\\b.{0,80}\\b(?:headcount|workforce|positions)|(?:incurred|recorded)\\b.{0,80}\\b(?:restructuring|severance)\\b.{0,30}\\b(?:costs?|charges?))",
       "intention_pattern": "\\b(?:(?:plan|intend|expect)(?:s)? to|will)\\s+(?:undertake|implement|complete|announce|begin)\\b.{0,80}\\b(?:restructur\\w*|layoffs?|workforce reduction)|\\b(?:(?:plan|intend|expect)(?:s)? to|will)\\s+reduce\\b.{0,30}\\b(?:headcount|workforce)",
       "context_pattern": "\\b(?:workforce|employees?|personnel|headcount|severance|layoffs?|positions?)\\b",
       "exclude_pattern": ""
@@ -13,7 +13,7 @@
     {
       "id": "talent-v1",
       "category": "hiring_retention_constraints",
-      "pattern": "\\b(?:retain(?:ing)? (?:our |qualified |skilled |key )*(?:employees|personnel|talent)|attract(?:ing)? and retain(?:ing)?|labor shortages?|competition for (?:qualified |skilled )*(?:employees|talent|personnel)|hiring (?:challenges|constraints|freeze))\\b",
+      "pattern": "\\b(?:retain(?:ing)? (?:our |highly |qualified |skilled |key )*(?:employees|personnel|talent)|attract(?:ing)? and retain(?:ing)? (?:our |highly |qualified |skilled |key |new )*(?:employees|personnel|talent)|labor shortages?|competition for (?:qualified |skilled )*(?:employees|talent|personnel)|hiring (?:challenges|constraints|freeze))\\b",
       "reported_pattern": "\\bexperienced\\b.{0,80}\\b(?:labor shortages?|hiring challenges?|retention (?:issues|challenges))",
       "intention_pattern": "\\b(?:(?:plan|intend|expect)(?:s)? to|will)\\s+(?:hire|recruit|retain)\\b",
       "context_pattern": "",
