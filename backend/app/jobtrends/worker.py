@@ -134,6 +134,10 @@ def _run_once(months: int) -> None:
         )
 
     # Now that every raw source is fresh, rebuild all derived tables.
+    from app.jobtrends.sec.service import refresh_if_enabled
+
+    refresh_if_enabled()
+
     try:
         with SessionLocal() as session:
             rebuild_derived(session)

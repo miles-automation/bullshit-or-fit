@@ -50,5 +50,13 @@ class Settings(BaseSettings):
     # dataset is a few thousand rows, so one request covers it).
     warn_max_records: int = 50000
 
+    sec_enabled: bool = False
+    sec_contact_email: str = ""
+    sec_cache_dir: str = ".cache/sec"
+    sec_registry_path: str = ""
+    sec_rules_path: str = ""
+    sec_periods: int = 2
+    sec_max_filings: int = 40
+
 
 settings = Settings()

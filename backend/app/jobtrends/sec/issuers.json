@@ -1,0 +1,12 @@
+[
+  {"name":"Airbnb, Inc.","cik":"0001559720","provider":"greenhouse","company_token":"airbnb","verification_url":"https://data.sec.gov/submissions/CIK0001559720.json"},
+  {"name":"Cloudflare, Inc.","cik":"0001477333","provider":"greenhouse","company_token":"cloudflare","verification_url":"https://data.sec.gov/submissions/CIK0001477333.json"},
+  {"name":"Affirm Holdings, Inc.","cik":"0001820953","provider":"greenhouse","company_token":"affirm","verification_url":"https://data.sec.gov/submissions/CIK0001820953.json"},
+  {"name":"Pinterest, Inc.","cik":"0001506293","provider":"greenhouse","company_token":"pinterest","verification_url":"https://data.sec.gov/submissions/CIK0001506293.json"},
+  {"name":"Reddit, Inc.","cik":"0001713445","provider":"greenhouse","company_token":"reddit","verification_url":"https://data.sec.gov/submissions/CIK0001713445.json"},
+  {"name":"GitLab Inc.","cik":"0001653482","provider":"greenhouse","company_token":"gitlab","verification_url":"https://data.sec.gov/submissions/CIK0001653482.json"},
+  {"name":"Twilio Inc.","cik":"0001447669","provider":"greenhouse","company_token":"twilio","verification_url":"https://data.sec.gov/submissions/CIK0001447669.json"},
+  {"name":"Lyft, Inc.","cik":"0001759509","provider":"greenhouse","company_token":"lyft","verification_url":"https://data.sec.gov/submissions/CIK0001759509.json"},
+  {"name":"Asana, Inc.","cik":"0001477720","provider":"greenhouse","company_token":"asana","verification_url":"https://data.sec.gov/submissions/CIK0001477720.json"},
+  {"name":"Coinbase Global, Inc.","cik":"0001679788","provider":"greenhouse","company_token":"coinbase","verification_url":"https://data.sec.gov/submissions/CIK0001679788.json"}
+]

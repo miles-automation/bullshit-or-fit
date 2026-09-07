@@ -1,0 +1,4 @@
+{
+  "sec_schema_matches_models": true,
+  "global_alembic_check": "Pre-existing index-name drift in experiments/ATS/HN/commute-shed tables; no SEC differences. Existing model/migration files unchanged."
+}

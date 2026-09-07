@@ -94,3 +94,10 @@ uv run python -m app.jobtrends.cli usajobs-snapshot     # snapshot USAJobs (need
 uv run python -m app.jobtrends.cli usajobs              # federal roles by agency
 uv run python -m app.jobtrends.cli skills               # cross-source skill demand
 ```
+
+### SEC annual filings
+
+An optional, disabled-by-default collector stores SEC 10-K documents and versioned,
+evidence-backed text candidates separately from job postings. See
+[SEC ingestion and signal commands](docs/sec-filings.md) for the issuer registry,
+required contact configuration, bounded CLI usage, and interpretation limits.
