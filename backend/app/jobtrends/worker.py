@@ -148,6 +148,23 @@ def _run_once(months: int) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: derived rebuild failed; will retry next interval")
 
+    # LAST: has any source silently stopped producing rows? Every connector above
+    # degrades a fetch failure to a WARNING (deliberately — see freshness.py), so a
+    # dead source looks exactly like a healthy tick from in here. This watches the
+    # DATA instead, and alerts once per transition via a Spark Swarm incident.
+    try:
+        from app.jobtrends.freshness import check_and_notify
+
+        with SessionLocal() as session:
+            transitions = check_and_notify(session)
+        if transitions:
+            logger.warning(
+                "jobtrends: source-health transitions — %s",
+                ", ".join(f"{t.source}->{t.to_state}" for t in transitions),
+            )
+    except Exception:  # noqa: BLE001 — monitoring must never sink the loop it watches
+        logger.exception("jobtrends: freshness check failed; will retry next interval")
+
 
 def _setup_logging() -> None:
     # force=True so a second call replaces handlers — alembic's fileConfig (run during

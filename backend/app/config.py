@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     sec_rules_path: str = ""
     sec_periods: int = 2
     sec_max_filings: int = 40
+    bullshit_or_fit_ss_api_key: str = ""
 
 
 settings = Settings()
