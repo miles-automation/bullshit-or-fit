@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 # Import the models so their tables register on Base.metadata before autogenerate.
 import app.experiments  # noqa: F401
 import app.jobtrends.models  # noqa: F401
+import app.jobtrends.sec.models  # noqa: F401
 from app.config import settings
 from app.db import Base
 

@@ -1,0 +1,114 @@
+{
+  "validated_at": "2026-09-07T15:26:56.914838+00:00",
+  "database": "PostgreSQL16, fresh task-owned review database; migration chain through0016 applied",
+  "raw_origin": "Copied original bytes and retrieval metadata from first live SEC ingest; no document refetch.",
+  "extractor_version": "paragraph-candidates-v3:e5e7523572b8eb94",
+  "first_rebuild": {
+    "filings": 7,
+    "signals": 173,
+    "failed": 0
+  },
+  "second_rebuild": {
+    "filings": 7,
+    "signals": 173,
+    "failed": 0
+  },
+  "replay": {
+    "discovered": 7,
+    "downloaded": 0,
+    "download_attempts": 0,
+    "cached": 7,
+    "failed": 0,
+    "signals_rebuilt": 0,
+    "warnings": [],
+    "filings": [
+      {
+        "cik": "0001559720",
+        "accession": "0001559720-25-000010",
+        "form": "10-K",
+        "filing_date": "2025-02-13",
+        "report_date": "2024-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1559720/000155972025000010/abnb-20241231.htm",
+        "bytes": 2185059,
+        "parse_status": "ok",
+        "error": null
+      },
+      {
+        "cik": "0001559720",
+        "accession": "0001559720-26-000004",
+        "form": "10-K",
+        "filing_date": "2026-02-12",
+        "report_date": "2025-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1559720/000155972026000004/abnb-20251231.htm",
+        "bytes": 2131290,
+        "parse_status": "ok",
+        "error": null
+      },
+      {
+        "cik": "0001477333",
+        "accession": "0001477333-25-000043",
+        "form": "10-K",
+        "filing_date": "2025-02-20",
+        "report_date": "2024-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1477333/000147733325000043/cloud-20241231.htm",
+        "bytes": 2506920,
+        "parse_status": "ok",
+        "error": null
+      },
+      {
+        "cik": "0001477333",
+        "accession": "0001477333-26-000016",
+        "form": "10-K",
+        "filing_date": "2026-02-26",
+        "report_date": "2025-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1477333/000147733326000016/cloud-20251231.htm",
+        "bytes": 2600690,
+        "parse_status": "ok",
+        "error": null
+      },
+      {
+        "cik": "0001477333",
+        "accession": "0001477333-26-000026",
+        "form": "10-K/A",
+        "filing_date": "2026-04-29",
+        "report_date": "2025-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1477333/000147733326000026/cloud-20251231.htm",
+        "bytes": 777413,
+        "parse_status": "ok",
+        "error": null
+      },
+      {
+        "cik": "0001447669",
+        "accession": "0001447669-25-000035",
+        "form": "10-K",
+        "filing_date": "2025-02-26",
+        "report_date": "2024-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1447669/000144766925000035/twlo-20241231.htm",
+        "bytes": 2708464,
+        "parse_status": "ok",
+        "error": null
+      },
+      {
+        "cik": "0001447669",
+        "accession": "0001447669-26-000021",
+        "form": "10-K",
+        "filing_date": "2026-02-24",
+        "report_date": "2025-12-31",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/1447669/000144766926000021/twlo-20251231.htm",
+        "bytes": 2476604,
+        "parse_status": "ok",
+        "error": null
+      }
+    ],
+    "http_requests": 0,
+    "submissions_cache_hits": 3
+  },
+  "counts": {
+    "filings": 7,
+    "normalized_documents": 7,
+    "signals": 173
+  },
+  "exact_excerpt_and_raw_hash_checks": 173,
+  "raw_file_hash_checks": 7,
+  "replay_payload_columns_absent": true
+}

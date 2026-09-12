@@ -133,6 +133,13 @@ def _run_once(months: int) -> None:
             "jobtrends: commute-shed snapshot failed; will retry next interval"
         )
 
+    try:
+        from app.jobtrends.sec.service import refresh_if_enabled
+
+        refresh_if_enabled()
+    except Exception:
+        logger.exception("jobtrends: SEC source unavailable; continuing other sources")
+
     # Now that every raw source is fresh, rebuild all derived tables.
     try:
         with SessionLocal() as session:
