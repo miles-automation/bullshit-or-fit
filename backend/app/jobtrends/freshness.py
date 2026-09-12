@@ -212,7 +212,7 @@ def notify(transitions: list[Transition], *, client: httpx.Client | None = None)
                     t.to_state,
                     t.source,
                 )
-            except Exception:  # noqa: BLE001 — monitoring must never break ingestion
+            except Exception:  # noqa: BLE001
                 logger.exception(
                     "jobtrends: failed to post source-health event for '%s'", t.source
                 )
