@@ -71,14 +71,6 @@ app.include_router(experiments.router, prefix="/api/v1")
 
 
 def _safe_spa_file(static_root: Path, path: str) -> Path:
-    """Resolve a requested SPA path to a file inside ``static_root``.
-
-    ``static_root / path`` collapses to an absolute path when ``path`` is
-    absolute (e.g. ``//etc/passwd`` -> ``/etc/passwd``), and symlinks or
-    ``..`` segments can otherwise escape the static directory. Resolve the
-    candidate and require it to stay within the (resolved) static root
-    before serving it; anything else falls back to the SPA entrypoint.
-    """
     candidate = (static_root / path).resolve()
     root = static_root.resolve()
     if candidate.is_relative_to(root) and candidate.is_file():
