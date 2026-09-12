@@ -69,6 +69,15 @@ app.include_router(experiments.router, prefix="/api/v1")
 
 # --- Static / SPA fallback ---
 
+
+def _safe_spa_file(static_root: Path, path: str) -> Path:
+    candidate = (static_root / path).resolve()
+    root = static_root.resolve()
+    if candidate.is_relative_to(root) and candidate.is_file():
+        return candidate
+    return root / "index.html"
+
+
 static_dir = Path(__file__).resolve().parent.parent / "static"
 if static_dir.exists():
     assets_dir = static_dir / "assets"
@@ -83,7 +92,4 @@ if static_dir.exists():
     def serve_spa(path: str):
         if path.startswith("api/") or path in {"healthz", "api/v1/healthz"}:
             raise HTTPException(status_code=404, detail="Not found")
-        candidate = static_dir / path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(static_dir / "index.html")
+        return FileResponse(_safe_spa_file(static_dir, path))
