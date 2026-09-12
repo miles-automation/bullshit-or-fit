@@ -462,3 +462,21 @@ class CompSourceStat(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SourceHealth(Base):
+    __tablename__ = "source_health"
+    __table_args__ = {"schema": SCHEMA}
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )

@@ -133,6 +133,13 @@ def _run_once(months: int) -> None:
             "jobtrends: commute-shed snapshot failed; will retry next interval"
         )
 
+    try:
+        from app.jobtrends.sec.service import refresh_if_enabled
+
+        refresh_if_enabled()
+    except Exception:
+        logger.exception("jobtrends: SEC source unavailable; continuing other sources")
+
     # Now that every raw source is fresh, rebuild all derived tables.
     try:
         with SessionLocal() as session:
@@ -140,6 +147,19 @@ def _run_once(months: int) -> None:
         logger.info("jobtrends: tick complete — derived tables rebuilt")
     except Exception:  # noqa: BLE001
         logger.exception("jobtrends: derived rebuild failed; will retry next interval")
+
+    try:
+        from app.jobtrends.freshness import check_and_notify
+
+        with SessionLocal() as session:
+            transitions = check_and_notify(session)
+        if transitions:
+            logger.warning(
+                "jobtrends: source-health transitions — %s",
+                ", ".join(f"{t.source}->{t.to_state}" for t in transitions),
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: freshness check failed; will retry next interval")
 
 
 def _setup_logging() -> None:

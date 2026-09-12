@@ -1,0 +1,50 @@
+{
+  "version": "paragraph-candidates-v3",
+  "rules": [
+    {
+      "id": "workforce-v1",
+      "category": "workforce_restructuring",
+      "pattern": "\\b(?:layoffs?|restructur(?:ing|e)|reduction in (?:our |the )?workforce|workforce reductions?|reduced (?:our )?(?:headcount|workforce)|severance (?:costs?|charges?))\\b",
+      "reported_pattern": "\\b(?:(?:announced|implemented|completed|conducted|carried out)\\b.{0,100}\\b(?:restructur\\w*|layoffs?|workforce reduction)|(?:reduced|eliminated)\\b.{0,80}\\b(?:headcount|workforce|positions)|(?:incurred|recorded)\\b.{0,80}\\b(?:restructuring|severance)\\b.{0,30}\\b(?:costs?|charges?))",
+      "intention_pattern": "\\b(?:(?:plan|intend|expect)(?:s)? to|will)\\s+(?:undertake|implement|complete|announce|begin)\\b.{0,80}\\b(?:restructur\\w*|layoffs?|workforce reduction)|\\b(?:(?:plan|intend|expect)(?:s)? to|will)\\s+reduce\\b.{0,30}\\b(?:headcount|workforce)",
+      "context_pattern": "\\b(?:workforce|employees?|personnel|headcount|severance|layoffs?|positions?)\\b",
+      "exclude_pattern": ""
+    },
+    {
+      "id": "talent-v1",
+      "category": "hiring_retention_constraints",
+      "pattern": "\\b(?:retain(?:ing)? (?:our |highly |qualified |skilled |key )*(?:employees|personnel|talent)|attract(?:ing)? and retain(?:ing)? (?:our |highly |qualified |skilled |key |new )*(?:employees|personnel|talent)|labor shortages?|competition for (?:qualified |skilled )*(?:employees|talent|personnel)|hiring (?:challenges|constraints|freeze))\\b",
+      "reported_pattern": "\\bexperienced\\b.{0,80}\\b(?:labor shortages?|hiring challenges?|retention (?:issues|challenges))",
+      "intention_pattern": "\\b(?:(?:plan|intend|expect)(?:s)? to|will)\\s+(?:hire|recruit|retain)\\b",
+      "context_pattern": "",
+      "exclude_pattern": ""
+    },
+    {
+      "id": "automation-v1",
+      "category": "automation_ai",
+      "pattern": "\\b(?:artificial intelligence|machine learning|generative AI|automat(?:ion|ed|ing))\\b",
+      "reported_pattern": "\\b(?:invested|implemented|deployed|adopted|integrated)\\b.{0,100}\\b(?:artificial intelligence|machine learning|generative AI|automation)",
+      "intention_pattern": "\\b(?:plan|intend|expect)(?:s)? to\\b.{0,180}\\b(?:artificial intelligence|machine learning|generative AI|automat\\w*|AI)|\\bwill (?:invest|develop|build|adopt|implement|integrate)\\b.{0,100}\\b(?:AI|artificial intelligence|machine learning|automation)",
+      "context_pattern": "\\b(?:invest\\w*|implement\\w*|adopt\\w*|automat\\w*|integrat\\w*|develop\\w*|build\\w*|product\\w*|efficien\\w*|operations|infrastructure)\\b",
+      "exclude_pattern": "\\bselected to serve\\b.{0,100}\\b(?:board|director)"
+    },
+    {
+      "id": "demand-v1",
+      "category": "demand_customer_concentration",
+      "pattern": "\\b(?:declin(?:e|es|ed|ing) in demand|reduced demand|weaken(?:ing|ed) demand|customer concentration|concentration of (?:our )?(?:customers|revenue)|depend(?:ence|ent) on (?:a |our )?(?:small|limited) number of customers)\\b",
+      "reported_pattern": "\\bexperienced\\b.{0,80}\\b(?:reduced demand|declin\\w* in demand|customer concentration)",
+      "intention_pattern": "(?!)",
+      "context_pattern": "",
+      "exclude_pattern": ""
+    },
+    {
+      "id": "investment-v1",
+      "category": "expansion_capital_investment",
+      "pattern": "\\b(?:capital expenditures?|capital investments?|expand(?:ing|ed)? (?:our )?(?:operations|facilities|capacity)|new (?:facilities|markets|data centers))\\b",
+      "reported_pattern": "\\b(?:expanded (?:our )?(?:operations|facilities|capacity)|(?:incurred|increased|decreased)\\b.{0,80}\\bcapital expenditures|capital expenditures\\b.{0,80}\\b(?:were|increased|decreased))",
+      "intention_pattern": "\\b(?:plan|intend|expect)(?:s)? to\\b.{0,80}\\b(?:expand|invest|capital expenditures)|\\bwill (?:expand|invest|increase.{0,20}(?:capital|capacity))",
+      "context_pattern": "",
+      "exclude_pattern": ""
+    }
+  ]
+}
