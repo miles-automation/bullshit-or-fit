@@ -95,6 +95,12 @@ uv run python -m app.jobtrends.cli usajobs              # federal roles by agenc
 uv run python -m app.jobtrends.cli skills               # cross-source skill demand
 ```
 
+### MCP access
+
+A local read-only MCP server exposes stored SEC filings, evidence candidates and
+ATS/board job metadata for agent research and Sluice evaluation. See
+[tool contracts and client setup](docs/mcp.md).
+
 ### SEC annual filings
 
 An optional, disabled-by-default collector stores SEC 10-K documents and versioned,

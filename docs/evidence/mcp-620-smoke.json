@@ -1,0 +1,13 @@
+{
+  "sample_signal_rows": 12,
+  "sample_filings": 3,
+  "direct_stdio_exact_excerpt_comparison": "passed",
+  "direct_page_size": 2,
+  "postgres_read_only": [
+    "on",
+    "write rejected"
+  ],
+  "sluice_materialization": "passed",
+  "sluice_sql_result": "| total | filings |\n| --- | --- |\n| 12 | 3 |\n\n1 row(s) shown.",
+  "fixture_note": "Historical public SEC sample subset copied into task-only PostgreSQL. Normalized documents are placeholders; this checks MCP transport/provenance preservation, not extraction or market coverage."
+}
