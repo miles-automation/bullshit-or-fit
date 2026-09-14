@@ -48,3 +48,7 @@ jobtrends-worker:
 
 build:
 	docker build --platform linux/amd64 -t ghcr.io/miles-automation/bullshit-or-fit:latest .
+
+.PHONY: mcp
+mcp:
+	cd backend && uv run bullshitorfit-mcp
