@@ -122,7 +122,7 @@ _STUDENT_ROLE_RE = re.compile(
 
 _NON_SOFTWARE_SYSTEMS_RE = re.compile(
     r"\b(?:thermal|process|mechanical|electrical|hvac|power|fluid|propulsion)"
-    r" systems?\b",
+    r" systems? engineer\w*\b",
     re.IGNORECASE,
 )
 

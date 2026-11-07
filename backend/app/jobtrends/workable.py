@@ -19,11 +19,19 @@ class WorkableConfig:
     account: str
 
 
-def _location(item: dict[str, Any]) -> str | None:
+def _location(item: dict[str, Any], account: str) -> str | None:
     raw = item.get("location")
-    loc: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    parts = [str(loc.get(k) or "").strip() for k in ("city", "region", "country")]
-    place = ", ".join(p for p in parts if p)
+    if raw is None:
+        place = ""
+    elif isinstance(raw, str):
+        place = raw.strip()
+    elif isinstance(raw, dict):
+        parts = [raw.get(k) for k in ("city", "region", "country")]
+        if any(p is not None and not isinstance(p, str) for p in parts):
+            raise ValueError(f"workable account {account} has a malformed location")
+        place = ", ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+    else:
+        raise ValueError(f"workable account {account} has a malformed location")
     if item.get("remote") or item.get("workplace") == "remote":
         return f"Remote ({place})" if place else "Remote"
     return place or None
@@ -66,7 +74,7 @@ def parse_workable(
                 company_name=company_name,
                 external_id=shortcode,
                 title=title,
-                location=_location(item),
+                location=_location(item, cfg.account),
                 department=department or None,
                 url=f"https://apply.workable.com/{cfg.account}/j/{shortcode}/",
                 content_text=title,

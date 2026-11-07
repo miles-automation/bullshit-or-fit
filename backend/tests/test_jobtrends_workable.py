@@ -36,6 +36,19 @@ def test_parse_maps_fields_and_remote_location() -> None:
     assert remote.location == "Remote (Niwot, Colorado, United States)"
 
 
+def test_parse_accepts_string_and_missing_locations() -> None:
+    plain = {**_job("A"), "location": "Niwot, CO"}
+    missing = {**_job("B"), "location": None}
+    jobs = parse_workable("acme", "Acme", CFG, [plain, missing])
+    assert [j.location for j in jobs] == ["Niwot, CO", None]
+
+
+@pytest.mark.parametrize("location", [["Niwot"], {"city": 5}, 7])
+def test_parse_raises_on_malformed_location(location: object) -> None:
+    with pytest.raises(ValueError):
+        parse_workable("acme", "Acme", CFG, [{**_job("A"), "location": location}])
+
+
 @pytest.mark.parametrize("results", [None, [None], [{"title": "Dev"}]])
 def test_parse_raises_on_malformed_results(results: object) -> None:
     with pytest.raises(ValueError):

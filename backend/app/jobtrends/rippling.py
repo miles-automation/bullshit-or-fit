@@ -16,11 +16,16 @@ class RipplingConfig:
     board: str
 
 
-def _label(value: Any) -> str | None:
+def _label(value: Any, board: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
     if isinstance(value, dict):
         label = value.get("label")
-        return str(label).strip() or None if label else None
-    return None
+        if label is None or isinstance(label, str):
+            return (label or "").strip() or None
+    raise ValueError(f"rippling board {board} has a malformed label: {value!r}")
 
 
 def parse_rippling(
@@ -45,8 +50,8 @@ def parse_rippling(
                 company_name=company_name,
                 external_id=job_id,
                 title=title,
-                location=_label(item.get("workLocation")),
-                department=_label(item.get("department")),
+                location=_label(item.get("workLocation"), cfg.board),
+                department=_label(item.get("department"), cfg.board),
                 url=item.get("url")
                 or f"https://ats.rippling.com/{cfg.board}/jobs/{job_id}",
                 content_text=title,

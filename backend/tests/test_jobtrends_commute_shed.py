@@ -401,6 +401,9 @@ def test_trihydro_feed_reaches_front_range_cheyenne_and_open_roles() -> None:
 def test_tech_filter_keeps_software_titles_that_mention_hardware_systems() -> None:
     assert is_tech_role_title("Senior Software Engineer - Control Systems")
     assert is_tech_role_title("Senior Systems Engineer")
+    assert is_tech_role_title("Business Process Systems Analyst")
+    assert is_tech_role_title("Process Systems Administrator")
+    assert not is_tech_role_title("Thermal Systems Engineering Lead")
 
 
 def test_small_employers_are_registered_with_unique_tokens() -> None:

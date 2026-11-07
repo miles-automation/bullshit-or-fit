@@ -29,6 +29,19 @@ def test_parse_maps_fields() -> None:
     assert job.url == "https://ats.rippling.com/acme-careers/jobs/840d45c9"
 
 
+def test_parse_accepts_string_and_missing_locations() -> None:
+    plain = {**JOB, "workLocation": "Loveland, CO", "department": None}
+    missing = {"uuid": "2", "name": "Dev"}
+    jobs = parse_rippling("acme", "Acme", CFG, [plain, missing])
+    assert [j.location for j in jobs] == ["Loveland, CO", None]
+
+
+@pytest.mark.parametrize("location", [["Loveland, CO"], {"label": 5}, 7])
+def test_parse_raises_on_malformed_location(location: object) -> None:
+    with pytest.raises(ValueError):
+        parse_rippling("acme", "Acme", CFG, [{**JOB, "workLocation": location}])
+
+
 def test_parse_accepts_an_empty_board() -> None:
     assert parse_rippling("acme", "Acme", CFG, []) == []
 
