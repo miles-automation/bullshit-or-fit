@@ -105,7 +105,9 @@ _UNIVERSITY_TECH_RE = re.compile(
     re.IGNORECASE,
 )
 _STUDENT_ROLE_RE = re.compile(
-    r"^\s*(?:work study|hourly pooled)\b|\b(?:intern|internship|student)\b",
+    r"^\s*(?:work study|hourly pooled)\b|\b(?:intern|internship)\b|"
+    r"(?<!non-)\bstudent (?:hourly|assistant|employee|worker|technician|developer|"
+    r"programmer|web developer)\b",
     re.IGNORECASE,
 )
 
@@ -335,6 +337,24 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
             host="wd12",
             site="fortcollins_careers",
             campus_city="Fort Collins",
+            campus_locations=frozenset(
+                {
+                    "Behavioral Sciences Building",
+                    "Biology",
+                    "Clark Hall",
+                    "Guggenheim Hall",
+                    "Moby",
+                    "Painter Center",
+                    "Pathology",
+                    "Plant Sciences",
+                    "Rockwell Hall",
+                    "Sage Hall",
+                    "Social Sciences Hall",
+                    "Translational Medicine Institute Tmi",
+                    "University Center for the Arts UCA",
+                    "Veterinary Hospital and Education Complex VTH",
+                }
+            ),
         ),
         tech_only=True,
         local_only=True,

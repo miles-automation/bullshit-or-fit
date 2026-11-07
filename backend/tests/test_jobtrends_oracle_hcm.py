@@ -53,7 +53,7 @@ def test_parse_skips_rows_without_id_or_title_and_tolerates_bad_date() -> None:
     assert jobs[0].posted_at is None
 
 
-def test_client_paginates_to_total_and_dedupes() -> None:
+def test_client_paginates_to_total() -> None:
     offsets: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -65,7 +65,7 @@ def test_client_paginates_to_total_and_dedupes() -> None:
         rows = (
             [_req(str(i)) for i in range(50)]
             if offset == "0"
-            else [_req("49"), _req("50")]
+            else [_req("50"), _req("51")]
         )
         return httpx.Response(
             200, json={"items": [{"TotalJobsCount": 52, "requisitionList": rows}]}
@@ -74,7 +74,7 @@ def test_client_paginates_to_total_and_dedupes() -> None:
     client = OracleHcmClient(transport=httpx.MockTransport(handler))
     jobs = client.fetch("uw", "UW", CFG)
     assert offsets == ["0", "50"]
-    assert len(jobs) == 51
+    assert len(jobs) == 52
 
 
 def test_client_raises_when_response_has_no_items() -> None:
@@ -91,3 +91,32 @@ def test_client_raises_on_http_error() -> None:
     )
     with pytest.raises(httpx.HTTPStatusError):
         client.fetch("uw", "UW", CFG)
+
+
+def _oracle_response(payload: dict[str, object]) -> OracleHcmClient:
+    return OracleHcmClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"items": [payload]})
+        )
+    )
+
+
+def test_client_raises_when_requisition_list_is_missing() -> None:
+    with pytest.raises(ValueError):
+        _oracle_response({"TotalJobsCount": 230}).fetch("uw", "UW", CFG)
+
+
+def test_client_raises_when_total_is_missing() -> None:
+    with pytest.raises(ValueError):
+        _oracle_response({"requisitionList": [_req("1")]}).fetch("uw", "UW", CFG)
+
+
+def test_client_raises_on_empty_page_before_total() -> None:
+    client = _oracle_response({"TotalJobsCount": 230, "requisitionList": []})
+    with pytest.raises(ValueError):
+        client.fetch("uw", "UW", CFG)
+
+
+def test_client_accepts_a_genuinely_empty_board() -> None:
+    client = _oracle_response({"TotalJobsCount": 0, "requisitionList": []})
+    assert client.fetch("uw", "UW", CFG) == []

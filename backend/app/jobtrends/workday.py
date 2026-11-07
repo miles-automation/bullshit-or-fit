@@ -39,7 +39,6 @@ PROVIDER_WORKDAY = "workday"
 # pages is plenty; this just stops a runaway loop on a huge/misconfigured board.
 _PAGE_SIZE = 20
 _MAX_PAGES = 25
-_STATE_CODE_RE = re.compile(r"\b[A-Z]{2}\b")
 
 
 @dataclass(frozen=True)
@@ -51,6 +50,7 @@ class WorkdayConfig:
     site: str  # career-site id, e.g. "Jobsathpe"
     search: str = ""  # searchText pre-filter (a city name), coarse
     campus_city: str | None = None
+    campus_locations: frozenset[str] = frozenset()
 
 
 def _base_url(cfg: WorkdayConfig) -> str:
@@ -71,7 +71,7 @@ def _location(
     location = _location_from_path(external_path)
     if location is None:
         return fallback
-    if cfg.campus_city and not _STATE_CODE_RE.search(location):
+    if cfg.campus_city and location in cfg.campus_locations:
         return f"{location}, {cfg.campus_city}"
     return location
 
@@ -158,4 +158,8 @@ class WorkdayClient:
                     and (page + 1) * _PAGE_SIZE >= expected_total
                 ):
                     break
+        if expected_total is not None and len(by_path) < expected_total:
+            raise ValueError(
+                f"workday returned {len(by_path)} of {expected_total} jobs: {url}"
+            )
         return list(by_path.values())

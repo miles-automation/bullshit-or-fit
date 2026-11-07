@@ -1,6 +1,7 @@
 """Unit tests for the Workday CXS source (pure parse + paginating client)."""
 
 import httpx
+import pytest
 
 from app.jobtrends.workday import (
     PROVIDER_WORKDAY,
@@ -78,18 +79,20 @@ def test_client_paginates_until_total_reached() -> None:
     assert seen_offsets == [0, 20]  # stopped once (page+1)*20 >= total
 
 
-def test_client_stops_on_empty_page() -> None:
+def test_client_stops_on_empty_page_without_a_total() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         import json
 
         off = json.loads(request.content)["offset"]
         if off == 0:
-            return httpx.Response(200, json=_page(["/job/Fort-Collins/A_1"], 999))
+            page = _page(["/job/Fort-Collins/A_1"], 999)
+            page.pop("total")
+            return httpx.Response(200, json=page)
         return httpx.Response(200, json={"jobPostings": []})
 
     client = WorkdayClient(transport=httpx.MockTransport(handler))
     jobs = client.fetch("t", "T", CFG)
-    assert len(jobs) == 1  # empty second page breaks the loop despite total=999
+    assert len(jobs) == 1
 
 
 def test_client_ignores_zero_total_on_later_pages() -> None:
@@ -109,27 +112,44 @@ def test_client_ignores_zero_total_on_later_pages() -> None:
     assert len(jobs) == 60
 
 
-def test_client_dedupes_repeated_postings() -> None:
+def test_client_raises_when_pages_repeat_short_of_total() -> None:
     same = _page([f"/job/Fort-Collins-CO/R{i}_{i}" for i in range(20)], 40)
     client = WorkdayClient(
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json=same))
     )
-    assert len(client.fetch("t", "T", CFG)) == 20
+    with pytest.raises(ValueError):
+        client.fetch("t", "T", CFG)
 
 
-def test_campus_city_tags_building_locations_only() -> None:
+def test_client_raises_on_empty_page_before_total() -> None:
+    import json
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        off = json.loads(request.content)["offset"]
+        paths = (
+            [f"/job/Fort-Collins-CO/R{i}_{i}" for i in range(20)] if off == 0 else []
+        )
+        return httpx.Response(200, json=_page(paths, 60))
+
+    client = WorkdayClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ValueError):
+        client.fetch("t", "T", CFG)
+
+
+def test_campus_city_tags_only_listed_buildings() -> None:
     cfg = WorkdayConfig(
         tenant="csusystem",
         host="wd12",
         site="fortcollins_careers",
         campus_city="Fort Collins",
+        campus_locations=frozenset({"Sage Hall"}),
     )
     payload = _page(
         [
             "/job/Sage-Hall/IT-Support_1",
             "/job/Fort-Collins-CO/IT-Support_2",
-            "/job/CEMML---Devens-MA/GIS-Analyst_3",
-            "/job/Denver-CO-Spur/IT-Support_4",
+            "/job/CSFS-Durango/GIS-Analyst_3",
+            "/job/Mountain-Campus/IT-Support_4",
         ],
         4,
     )
@@ -137,6 +157,6 @@ def test_campus_city_tags_building_locations_only() -> None:
     assert locations == [
         "Sage Hall, Fort Collins",
         "Fort Collins CO",
-        "CEMML   Devens MA",
-        "Denver CO Spur",
+        "CSFS Durango",
+        "Mountain Campus",
     ]

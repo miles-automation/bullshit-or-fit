@@ -20,6 +20,7 @@ from app.jobtrends.commute_shed import (
     role_in_shed,
 )
 from app.jobtrends.models import CommuteShedEmployer
+from app.jobtrends.workday import parse_workday
 from app.jobtrends.oracle_hcm import (
     PROVIDER_ORACLE_HCM,
     OracleHcmClient,
@@ -239,6 +240,8 @@ def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
         "26-124 Research Data Engineer/Statistical Programmer Part-time",
         "Open Source Forest Data Analyst",
         "Reporting Engineer",
+        "Student Information Systems Administrator",
+        "Non-Student Hourly - IT Support Technician",
     ],
 )
 def test_university_filter_keeps_real_tech_titles(title: str) -> None:
@@ -257,6 +260,8 @@ def test_university_filter_keeps_real_tech_titles(title: str) -> None:
         "Engineer, Senior - Facilities Engineering",
         "Facilities Maintenance Technician – Mechanical Systems",
         "Make it happen coordinator",
+        "Student Hourly - IT Support Technician",
+        "Student Web Developer",
     ],
 )
 def test_university_filter_drops_non_tech_titles(title: str) -> None:
@@ -271,6 +276,22 @@ def test_universities_are_registered_with_live_tech_filtered_feeds() -> None:
     assert uw.tier == TIER_LARAMIE and uw.tech_only
     assert csu.workday is not None and csu.tier == TIER_FRONT_RANGE
     assert csu.tech_only and csu.local_only
+
+
+def test_csfs_durango_is_not_in_reach_for_csu() -> None:
+    csu = next(e for e in SEED_EMPLOYERS if e.token == "colorado-state-university")
+    assert csu.workday is not None
+    payload = {
+        "jobPostings": [
+            {"title": "GIS Analyst", "externalPath": "/job/CSFS-Durango/GIS_1"},
+            {"title": "IT Support", "externalPath": "/job/Sage-Hall/IT_2"},
+        ]
+    }
+    locations = [j.location for j in parse_workday("c", "C", csu.workday, payload)]
+    reach = [
+        role_in_shed(loc, csu.tier, local_only=csu.local_only) for loc in locations
+    ]
+    assert reach == [False, True]
 
 
 def _uw_job(title: str, location: str) -> ParsedJob:

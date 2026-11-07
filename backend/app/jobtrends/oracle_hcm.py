@@ -97,14 +97,18 @@ class OracleHcmClient:
                 items = resp.json().get("items")
                 if not items:
                     raise ValueError(f"oracle hcm response has no items: {cfg.host}")
-                requisitions = items[0].get("requisitionList") or []
+                requisitions = items[0].get("requisitionList")
+                total = items[0].get("TotalJobsCount")
+                if not isinstance(requisitions, list) or not isinstance(total, int):
+                    raise ValueError(f"oracle hcm response is incomplete: {cfg.host}")
                 for job in parse_oracle_hcm(
                     company_token, company_name, cfg, requisitions
                 ):
                     by_id[job.external_id] = job
-                total = items[0].get("TotalJobsCount")
-                if not requisitions or (
-                    isinstance(total, int) and offset + _PAGE_SIZE >= total
-                ):
+                if not requisitions or offset + _PAGE_SIZE >= total:
                     break
+        if len(by_id) < total:
+            raise ValueError(
+                f"oracle hcm returned {len(by_id)} of {total} jobs: {cfg.host}"
+            )
         return list(by_id.values())
