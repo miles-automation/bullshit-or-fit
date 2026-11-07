@@ -100,7 +100,11 @@ class OracleHcmClient:
                     raise ValueError(f"oracle hcm response has no items: {cfg.host}")
                 requisitions = items[0].get("requisitionList")
                 total = items[0].get("TotalJobsCount")
-                if not isinstance(requisitions, list) or not isinstance(total, int):
+                if (
+                    not isinstance(requisitions, list)
+                    or type(total) is not int
+                    or total < 0
+                ):
                     raise ValueError(f"oracle hcm response is incomplete: {cfg.host}")
                 if page == 0:
                     expected_total = total

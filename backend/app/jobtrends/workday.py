@@ -148,7 +148,7 @@ class WorkdayClient:
                 payload = resp.json()
                 if page == 0:
                     total = payload.get("total")
-                    if not isinstance(total, int):
+                    if type(total) is not int or total < 0:
                         raise ValueError(f"workday response has no total: {url}")
                     expected_total = total
                 postings = payload.get("jobPostings") or []

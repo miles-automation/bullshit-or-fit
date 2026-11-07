@@ -79,9 +79,14 @@ def test_client_paginates_until_total_reached() -> None:
     assert seen_offsets == [0, 20]  # stopped once (page+1)*20 >= total
 
 
-def test_client_raises_when_first_page_has_no_total() -> None:
+@pytest.mark.parametrize(
+    "payload", [{}, {"total": -1, "jobPostings": []}, {"total": False}]
+)
+def test_client_raises_when_first_page_total_is_invalid(
+    payload: dict[str, object],
+) -> None:
     client = WorkdayClient(
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
     )
     with pytest.raises(ValueError):
         client.fetch("t", "T", CFG)

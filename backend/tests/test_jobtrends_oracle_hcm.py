@@ -138,3 +138,10 @@ def test_client_keeps_first_page_total_when_later_page_reports_zero() -> None:
     client = OracleHcmClient(transport=httpx.MockTransport(handler))
     with pytest.raises(ValueError):
         client.fetch("uw", "UW", CFG)
+
+
+@pytest.mark.parametrize("total", [-1, False])
+def test_client_raises_on_invalid_total(total: object) -> None:
+    client = _oracle_response({"TotalJobsCount": total, "requisitionList": []})
+    with pytest.raises(ValueError):
+        client.fetch("uw", "UW", CFG)
