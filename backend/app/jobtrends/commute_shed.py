@@ -502,6 +502,27 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         notes="RiteTrack justice case-management SaaS, about 27 staff. C#, TypeScript, SQL Server. Posts openings on a plain page and hires by email.",
     ),
     ShedEmployer(
+        token="rave-aerospace",
+        name="RAVE Aerospace (ex-Safran Passenger Innovations)",
+        tier=TIER_LARAMIE,
+        category="aerospace",
+        hq_city="Laramie",
+        hq_state="WY",
+        distance_mi=0,
+        provider=PROVIDER_WORKABLE,
+        ats_token="rave-aerospace",
+        workable=WorkableConfig(account="raveaerospace"),
+        tech_only=True,
+        careers_url="https://apply.workable.com/raveaerospace/",
+        notes=(
+            "In-flight entertainment and connectivity systems, about 740 staff "
+            "across Brea CA, Laramie and Germany; Safran Passenger Innovations "
+            "until Kingswood's acquisition closed 2026-02-05. Laramie office builds "
+            "IFE software, in-office, C/C++ on Linux. Live Workable feed, tech "
+            "roles in Laramie or remote."
+        ),
+    ),
+    ShedEmployer(
         token="uplink-robotics",
         name="UplinkRobotics",
         tier=TIER_LARAMIE,
