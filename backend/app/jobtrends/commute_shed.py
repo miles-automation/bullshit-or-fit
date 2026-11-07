@@ -289,8 +289,11 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Cheyenne",
         hq_state="WY",
         distance_mi=50,
-        careers_url="https://custodiabank.com/careers",
-        notes="WY-chartered digital-asset bank. Small, technical team; fintech infra.",
+        careers_url="https://app.trinethire.com/companies/37151-custodia-bank-inc/jobs",
+        notes=(
+            "WY-chartered digital-asset bank. Small, technical team; fintech infra. "
+            "Posts on TriNet Hire; no openings as of 2026-11-07."
+        ),
     ),
     # --- Front Range, CO (~1–1.5 hr, US-287 / I-25) ---
     ShedEmployer(
