@@ -422,3 +422,15 @@ def test_fully_remote_employers_keep_roles_listed_at_a_distant_office() -> None:
     assert in_reach(by_token["tilt"], "Denver, CO")
     assert in_reach(by_token["hudu"], "United States")
     assert not in_reach(by_token["turbotenant"], "Knoxville, TN")
+
+
+def test_rave_aerospace_keeps_laramie_and_remote_tech_roles_only() -> None:
+    from app.jobtrends.commute_shed import in_reach
+    from app.jobtrends.workable import PROVIDER_WORKABLE
+
+    rave = next(e for e in SEED_EMPLOYERS if e.token == "rave-aerospace")
+    assert rave.provider == PROVIDER_WORKABLE and rave.workable is not None
+    assert rave.tier == TIER_LARAMIE and rave.tech_only
+    assert in_reach(rave, "Laramie, Wyoming, United States")
+    assert in_reach(rave, "Remote (United States)")
+    assert not in_reach(rave, "Brea, California, United States")
