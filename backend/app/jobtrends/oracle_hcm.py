@@ -80,6 +80,7 @@ class OracleHcmClient:
     ) -> list[ParsedJob]:
         headers = {"User-Agent": self._user_agent, "Accept": "application/json"}
         by_id: dict[str, ParsedJob] = {}
+        expected_total = 0
         with httpx.Client(
             timeout=self.timeout_seconds, transport=self._transport
         ) as client:
@@ -101,14 +102,16 @@ class OracleHcmClient:
                 total = items[0].get("TotalJobsCount")
                 if not isinstance(requisitions, list) or not isinstance(total, int):
                     raise ValueError(f"oracle hcm response is incomplete: {cfg.host}")
+                if page == 0:
+                    expected_total = total
                 for job in parse_oracle_hcm(
                     company_token, company_name, cfg, requisitions
                 ):
                     by_id[job.external_id] = job
-                if not requisitions or offset + _PAGE_SIZE >= total:
+                if not requisitions or offset + _PAGE_SIZE >= expected_total:
                     break
-        if len(by_id) < total:
+        if len(by_id) < expected_total:
             raise ValueError(
-                f"oracle hcm returned {len(by_id)} of {total} jobs: {cfg.host}"
+                f"oracle hcm returned {len(by_id)} of {expected_total} jobs: {cfg.host}"
             )
         return list(by_id.values())

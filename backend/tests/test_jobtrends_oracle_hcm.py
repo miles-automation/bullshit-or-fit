@@ -120,3 +120,21 @@ def test_client_raises_on_empty_page_before_total() -> None:
 def test_client_accepts_a_genuinely_empty_board() -> None:
     client = _oracle_response({"TotalJobsCount": 0, "requisitionList": []})
     assert client.fetch("uw", "UW", CFG) == []
+
+
+def test_client_keeps_first_page_total_when_later_page_reports_zero() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        first = "offset=0," in unquote(str(request.url))
+        payload = (
+            {
+                "TotalJobsCount": 230,
+                "requisitionList": [_req(str(i)) for i in range(50)],
+            }
+            if first
+            else {"TotalJobsCount": 0, "requisitionList": []}
+        )
+        return httpx.Response(200, json={"items": [payload]})
+
+    client = OracleHcmClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(ValueError):
+        client.fetch("uw", "UW", CFG)

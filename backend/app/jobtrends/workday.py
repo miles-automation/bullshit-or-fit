@@ -146,13 +146,13 @@ class WorkdayClient:
                 resp = client.post(url, json=body, headers=headers)
                 resp.raise_for_status()
                 payload = resp.json()
+                if page == 0 and isinstance(payload.get("total"), int):
+                    expected_total = payload["total"]
                 postings = payload.get("jobPostings") or []
                 if not postings:
                     break
                 for job in parse_workday(company_token, company_name, cfg, payload):
                     by_path[job.external_id] = job
-                if page == 0 and isinstance(payload.get("total"), int):
-                    expected_total = payload["total"]
                 if (
                     expected_total is not None
                     and (page + 1) * _PAGE_SIZE >= expected_total

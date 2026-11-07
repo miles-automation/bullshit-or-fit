@@ -136,6 +136,16 @@ def test_client_raises_on_empty_page_before_total() -> None:
         client.fetch("t", "T", CFG)
 
 
+def test_client_raises_on_empty_first_page_with_positive_total() -> None:
+    client = WorkdayClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"total": 94, "jobPostings": []})
+        )
+    )
+    with pytest.raises(ValueError):
+        client.fetch("t", "T", CFG)
+
+
 def test_campus_city_tags_only_listed_buildings() -> None:
     cfg = WorkdayConfig(
         tenant="csusystem",
