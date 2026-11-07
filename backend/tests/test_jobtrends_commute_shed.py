@@ -260,6 +260,9 @@ def test_university_filter_keeps_real_tech_titles(title: str) -> None:
         "Engineer, Senior - Facilities Engineering",
         "Facilities Maintenance Technician – Mechanical Systems",
         "Make it happen coordinator",
+        "Thermal Systems Engineer",
+        "Process Systems Engineer",
+        "Power Systems Engineer",
         "Student Hourly - IT Support Technician",
         "Student Web Developer",
     ],
@@ -393,3 +396,29 @@ def test_trihydro_feed_reaches_front_range_cheyenne_and_open_roles() -> None:
     assert not in_reach(tri, "Salt Lake City, UT, US 84044")
     assert not in_reach(tri, "Cheyenne Wells, CO, US")
     assert not in_reach(tri, "Fort Collinsville, TX, US")
+
+
+def test_tech_filter_keeps_software_titles_that_mention_hardware_systems() -> None:
+    assert is_tech_role_title("Senior Software Engineer - Control Systems")
+    assert is_tech_role_title("Senior Systems Engineer")
+    assert is_tech_role_title("Business Process Systems Analyst")
+    assert is_tech_role_title("Process Systems Administrator")
+    assert not is_tech_role_title("Thermal Systems Engineering Lead")
+
+
+def test_small_employers_are_registered_with_unique_tokens() -> None:
+    tokens = [e.token for e in SEED_EMPLOYERS]
+    assert len(tokens) == len(set(tokens))
+    feed_keys = [(e.provider, e.ats_token) for e in SEED_EMPLOYERS if e.provider]
+    assert len(feed_keys) == len(set(feed_keys))
+    for token in ("handel-it", "tilt", "west-inc", "wilqo", "atmoszero", "sparkfun"):
+        assert token in tokens
+
+
+def test_fully_remote_employers_keep_roles_listed_at_a_distant_office() -> None:
+    from app.jobtrends.commute_shed import in_reach
+
+    by_token = {e.token: e for e in SEED_EMPLOYERS}
+    assert in_reach(by_token["tilt"], "Denver, CO")
+    assert in_reach(by_token["hudu"], "United States")
+    assert not in_reach(by_token["turbotenant"], "Knoxville, TN")

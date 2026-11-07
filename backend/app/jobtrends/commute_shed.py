@@ -42,6 +42,11 @@ from app.jobtrends.ats import (
 )
 from app.jobtrends.geo import classify_location
 from app.jobtrends.models import AtsJob, CommuteShedEmployer, CommuteShedStat
+from app.jobtrends.hiringthing import (
+    PROVIDER_HIRINGTHING,
+    HiringThingClient,
+    HiringThingConfig,
+)
 from app.jobtrends.hrsmart import PROVIDER_HRSMART, HrsmartClient, HrsmartConfig
 from app.jobtrends.neogov import PROVIDER_NEOGOV, NeogovClient, NeogovConfig
 from app.jobtrends.oracle_hcm import (
@@ -49,6 +54,8 @@ from app.jobtrends.oracle_hcm import (
     OracleHcmClient,
     OracleHcmConfig,
 )
+from app.jobtrends.rippling import PROVIDER_RIPPLING, RipplingClient, RipplingConfig
+from app.jobtrends.workable import PROVIDER_WORKABLE, WorkableClient, WorkableConfig
 from app.jobtrends.workday import PROVIDER_WORKDAY, WorkdayClient, WorkdayConfig
 
 logger = logging.getLogger(__name__)
@@ -113,8 +120,16 @@ _STUDENT_ROLE_RE = re.compile(
 )
 
 
+_NON_SOFTWARE_SYSTEMS_RE = re.compile(
+    r"\b(?:thermal|process|mechanical|electrical|hvac|power|fluid|propulsion)"
+    r" systems? engineer\w*\b",
+    re.IGNORECASE,
+)
+
+
 def is_tech_role_title(title: str) -> bool:
-    return bool(_TECH_TITLE_RE.search(title)) and not _STUDENT_ROLE_RE.search(title)
+    cleaned = _NON_SOFTWARE_SYSTEMS_RE.sub(" ", title)
+    return bool(_TECH_TITLE_RE.search(cleaned)) and not _STUDENT_ROLE_RE.search(title)
 
 
 @dataclass(frozen=True)
@@ -139,7 +154,11 @@ class ShedEmployer:
     neogov: NeogovConfig | None = None
     oracle_hcm: OracleHcmConfig | None = None
     hrsmart: HrsmartConfig | None = None
+    rippling: RipplingConfig | None = None
+    workable: WorkableConfig | None = None
+    hiringthing: HiringThingConfig | None = None
     extra_reach_tokens: tuple[str, ...] = ()
+    fully_remote: bool = False
     tech_only: bool = False
     # Big national employers: keep only their local-office roles (drop national-remote
     # ones, which belong on /you, not this place-based radar).
@@ -470,6 +489,282 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         careers_url="https://www.frontlinewildfire.com/careers/",
         notes="WY-based climate/hardware+app startup; remote-friendly eng.",
     ),
+    # --- Small local employers (research 2026-11-07, task 1091) ---
+    ShedEmployer(
+        token="handel-it",
+        name="Handel Information Technologies",
+        tier=TIER_LARAMIE,
+        category="software",
+        hq_city="Laramie",
+        hq_state="WY",
+        distance_mi=0,
+        careers_url="https://www.handelit.com/about/careers/",
+        notes="RiteTrack justice case-management SaaS, about 27 staff. C#, TypeScript, SQL Server. Posts openings on a plain page and hires by email.",
+    ),
+    ShedEmployer(
+        token="uplink-robotics",
+        name="UplinkRobotics",
+        tier=TIER_LARAMIE,
+        category="startup",
+        hq_city="Laramie",
+        hq_state="WY",
+        distance_mi=0,
+        careers_url="https://uplinkrobotics.com/careers/",
+        notes="Inspection crawler robots, about 7 staff, IMPACT 307 graduate. Rarely hires software.",
+    ),
+    ShedEmployer(
+        token="soil-action",
+        name="Soil Action",
+        tier=TIER_LARAMIE,
+        category="startup",
+        hq_city="Laramie",
+        hq_state="WY",
+        distance_mi=0,
+        careers_url="https://soilaction.com/",
+        notes="Seed-stage soil chemistry sensor plus AI for farms. No careers page found.",
+    ),
+    ShedEmployer(
+        token="mountain-west-farm-bureau",
+        name="Mountain West Farm Bureau Insurance",
+        tier=TIER_LARAMIE,
+        category="insurance",
+        hq_city="Laramie",
+        hq_state="WY",
+        distance_mi=0,
+        careers_url="https://mwfbic.com/careers/",
+        notes="Regional insurer with its home office in Laramie; occasional IT and production support roles.",
+    ),
+    ShedEmployer(
+        token="uniwyo",
+        name="UniWyo Federal Credit Union",
+        tier=TIER_LARAMIE,
+        category="finance",
+        hq_city="Laramie",
+        hq_state="WY",
+        distance_mi=0,
+        careers_url="https://www.uniwyo.com/Connect/About/Careers",
+        notes="Laramie credit union; occasional technology leadership roles.",
+    ),
+    ShedEmployer(
+        token="west-inc",
+        name="WEST (Western EcoSystems Technology)",
+        tier=TIER_CHEYENNE,
+        category="consulting",
+        hq_city="Cheyenne",
+        hq_state="WY",
+        distance_mi=50,
+        provider=PROVIDER_HRSMART,
+        ats_token="west-inc",
+        hrsmart=HrsmartConfig(host="west-inc.hua.hrsmart.com"),
+        tech_only=True,
+        extra_reach_tokens=("laramie, wy", "fort collins, co", "open, us"),
+        careers_url="https://west-inc.com/careers/",
+        notes="Ecological and statistical consulting with offices in Cheyenne, Laramie and Fort Collins; hires data scientists and software developers. Live Deltek (hrsmart) feed, tech roles only.",
+    ),
+    ShedEmployer(
+        token="language-io",
+        name="Language I/O",
+        tier=TIER_CHEYENNE,
+        category="startup",
+        hq_city="Cheyenne",
+        hq_state="WY",
+        distance_mi=50,
+        careers_url="https://languageio.com/careers/",
+        notes="LLM and machine translation for customer support, about 42 staff. No listings on its site; roles go to LinkedIn.",
+    ),
+    ShedEmployer(
+        token="gannett-trust",
+        name="Gannett Trust Company",
+        tier=TIER_CHEYENNE,
+        category="fintech",
+        hq_city="Cheyenne",
+        hq_state="WY",
+        distance_mi=50,
+        provider=PROVIDER_RIPPLING,
+        ats_token="gannett-trust",
+        rippling=RipplingConfig(board="gannett"),
+        tech_only=True,
+        careers_url="https://ats.rippling.com/gannett/jobs",
+        notes="Wyoming trust company with digital asset custody, about 10 staff. Live Rippling feed, tech roles only.",
+    ),
+    ShedEmployer(
+        token="powder-river-industries",
+        name="Powder River Industries",
+        tier=TIER_CHEYENNE,
+        category="government",
+        hq_city="Cheyenne",
+        hq_state="WY",
+        distance_mi=50,
+        careers_url="https://www.powderriverindustries.com/employment",
+        notes="SBA 8(a) federal IT contractor based in Cheyenne; current postings are on-site in Washington, DC.",
+    ),
+    ShedEmployer(
+        token="tilt",
+        name="TiLT",
+        tier=TIER_FRONT_RANGE,
+        category="startup",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        provider=PROVIDER_HIRINGTHING,
+        ats_token="tilt",
+        hiringthing=HiringThingConfig(host="hellotilt.rippling-ats.com"),
+        fully_remote=True,
+        careers_url="https://hellotilt.com/careers/",
+        notes="Leave-of-absence management software, about 72 staff, fully remote. Postings list Denver, CO as location. Live HiringThing RSS feed.",
+    ),
+    ShedEmployer(
+        token="spirae",
+        name="Spirae",
+        tier=TIER_FRONT_RANGE,
+        category="software",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        careers_url="https://spirae.com/about",
+        notes="Microgrid and distributed energy control software, about 29 staff. Job notices on the About page.",
+    ),
+    ShedEmployer(
+        token="hudu",
+        name="Hudu",
+        tier=TIER_FRONT_RANGE,
+        category="startup",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        provider="ashby",
+        ats_token="hudu",
+        fully_remote=True,
+        careers_url="https://www.hudu.com/careers",
+        notes="IT documentation platform for managed service providers, about 23 staff, fully remote postings. Live Ashby feed.",
+    ),
+    ShedEmployer(
+        token="billgo",
+        name="BillGO",
+        tier=TIER_FRONT_RANGE,
+        category="fintech",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        careers_url="https://billgo.com/join-us",
+        notes="Bill pay network for banks and small businesses, about 175 staff. Paycom postings linked from its careers page.",
+    ),
+    ShedEmployer(
+        token="encompass-technologies",
+        name="Encompass Technologies",
+        tier=TIER_FRONT_RANGE,
+        category="software",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        provider="greenhouse",
+        ats_token="encompasstechnologiesllp",
+        careers_url="https://www.encompasstech.com/careers/jobs",
+        notes="Route accounting and ERP software for beverage distributors, 200 to 230 staff. Live Greenhouse feed.",
+    ),
+    ShedEmployer(
+        token="turbotenant",
+        name="TurboTenant",
+        tier=TIER_FRONT_RANGE,
+        category="startup",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        provider="greenhouse",
+        ats_token="turbotenant",
+        careers_url="https://www.turbotenant.com/careers/",
+        notes="Landlord and rental management software, about 180 staff. Live Greenhouse feed.",
+    ),
+    ShedEmployer(
+        token="canidium",
+        name="Canidium",
+        tier=TIER_FRONT_RANGE,
+        category="consulting",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        careers_url="https://www.canidium.com/careers",
+        notes="Sales performance and pricing consultancy, about 120 staff; mostly consultants and contractors. CATS job board.",
+    ),
+    ShedEmployer(
+        token="remote-geosystems",
+        name="Remote GeoSystems",
+        tier=TIER_FRONT_RANGE,
+        category="hardware",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        careers_url="https://remotegeo.com/careers/",
+        notes="Geotagged video hardware and GIS mapping software, about 5 staff.",
+    ),
+    ShedEmployer(
+        token="atmoszero",
+        name="AtmosZero",
+        tier=TIER_FRONT_RANGE,
+        category="hardware",
+        hq_city="Loveland",
+        hq_state="CO",
+        distance_mi=75,
+        provider=PROVIDER_RIPPLING,
+        ats_token="atmoszero",
+        rippling=RipplingConfig(board="atmoszero-careers"),
+        tech_only=True,
+        careers_url="https://ats.rippling.com/atmoszero-careers/jobs",
+        notes="Electric industrial steam heat pumps. Live Rippling feed, tech roles only.",
+    ),
+    ShedEmployer(
+        token="sparkfun",
+        name="SparkFun Electronics",
+        tier=TIER_FRONT_RANGE,
+        category="hardware",
+        hq_city="Niwot",
+        hq_state="CO",
+        distance_mi=100,
+        provider=PROVIDER_WORKABLE,
+        ats_token="sparkfun",
+        workable=WorkableConfig(account="sparkfun-electronics"),
+        tech_only=True,
+        extra_reach_tokens=("niwot",),
+        careers_url="https://www.sparkfun.com/jobs",
+        notes="Open-source electronics maker with its own e-commerce platform. Live Workable feed, tech roles only.",
+    ),
+    ShedEmployer(
+        token="atomcomputing",
+        name="Atom Computing",
+        tier=TIER_FRONT_RANGE,
+        category="startup",
+        hq_city="Boulder",
+        hq_state="CO",
+        distance_mi=110,
+        provider="lever",
+        ats_token="atomcomputing",
+        tech_only=True,
+        careers_url="https://atom-computing.com/careers/",
+        notes="Neutral-atom quantum computers, about 130 staff; software roles in Boulder. Live Lever feed, tech roles only.",
+    ),
+    ShedEmployer(
+        token="campminder",
+        name="CampMinder",
+        tier=TIER_FRONT_RANGE,
+        category="startup",
+        hq_city="Boulder",
+        hq_state="CO",
+        distance_mi=110,
+        provider="greenhouse",
+        ats_token="campminder",
+        careers_url="https://campminder.com/careers/",
+        notes="Camp management SaaS, about 93 staff. Live Greenhouse feed.",
+    ),
+    ShedEmployer(
+        token="wilqo",
+        name="Wilqo",
+        tier=TIER_WY_REMOTE,
+        category="fintech",
+        hq_city="Ten Sleep",
+        hq_state="WY",
+        careers_url="https://builtin.com/company/wilqo/jobs",
+        notes="Mortgage lending platform, about 54 staff, .NET Core, React and event sourcing. No careers page; roles post on Built In and LinkedIn.",
+    ),
 ]
 
 
@@ -501,6 +796,8 @@ def role_in_shed(location: str | None, tier: str, *, local_only: bool = False) -
 
 
 def in_reach(employer: ShedEmployer, location: str | None) -> bool:
+    if employer.fully_remote:
+        return True
     entries = [e.strip().lower() for e in (location or "").split(" / ")]
     return role_in_shed(location, employer.tier, local_only=employer.local_only) or any(
         entry.startswith(token)
@@ -587,6 +884,9 @@ def commute_shed_snapshot(
     neogov_client: NeogovClient | None = None,
     oracle_hcm_client: OracleHcmClient | None = None,
     hrsmart_client: HrsmartClient | None = None,
+    rippling_client: RipplingClient | None = None,
+    workable_client: WorkableClient | None = None,
+    hiringthing_client: HiringThingClient | None = None,
 ) -> SnapshotResult:
     """Snapshot the live-feed subset of the registry into ats_jobs.
 
@@ -602,6 +902,9 @@ def commute_shed_snapshot(
     neogov_client = neogov_client or NeogovClient()
     oracle_hcm_client = oracle_hcm_client or OracleHcmClient()
     hrsmart_client = hrsmart_client or HrsmartClient()
+    rippling_client = rippling_client or RipplingClient()
+    workable_client = workable_client or WorkableClient()
+    hiringthing_client = hiringthing_client or HiringThingClient()
     run_at = datetime.now(tz=UTC)
     feeds = [e for e in SEED_EMPLOYERS if e.provider and e.ats_token]
     refreshed: list[str] = []
@@ -639,6 +942,30 @@ def commute_shed_snapshot(
                     )
                     continue
                 jobs = hrsmart_client.fetch(e.ats_token, e.name, e.hrsmart)  # type: ignore[arg-type]
+            elif e.provider == PROVIDER_RIPPLING:
+                if e.rippling is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is rippling but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = rippling_client.fetch(e.ats_token, e.name, e.rippling)  # type: ignore[arg-type]
+            elif e.provider == PROVIDER_WORKABLE:
+                if e.workable is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is workable but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = workable_client.fetch(e.ats_token, e.name, e.workable)  # type: ignore[arg-type]
+            elif e.provider == PROVIDER_HIRINGTHING:
+                if e.hiringthing is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is hiringthing but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = hiringthing_client.fetch(e.ats_token, e.name, e.hiringthing)  # type: ignore[arg-type]
             else:
                 company = Company(name=e.name, provider=e.provider, token=e.ats_token)  # type: ignore[arg-type]
                 jobs = client.fetch_company(company)
