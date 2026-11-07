@@ -42,6 +42,7 @@ from app.jobtrends.ats import (
 )
 from app.jobtrends.geo import classify_location
 from app.jobtrends.models import AtsJob, CommuteShedEmployer, CommuteShedStat
+from app.jobtrends.hrsmart import PROVIDER_HRSMART, HrsmartClient, HrsmartConfig
 from app.jobtrends.neogov import PROVIDER_NEOGOV, NeogovClient, NeogovConfig
 from app.jobtrends.oracle_hcm import (
     PROVIDER_ORACLE_HCM,
@@ -94,7 +95,7 @@ _TIER_AREA_TOKENS: dict[str, tuple[str, ...]] = {
 # local_only matches only the specific-metro tokens.
 _BROAD_AREA_TOKENS = frozenset({"colorado"})
 
-_UNIVERSITY_TECH_RE = re.compile(
+_TECH_TITLE_RE = re.compile(
     r"\b(?:software|developer|programmer|(?-i:IT)|information technology|"
     r"information security|cyber\w*|research computing|computer science|"
     r"computer information|computing|hpc|database|devops|cloud engineer|"
@@ -112,10 +113,8 @@ _STUDENT_ROLE_RE = re.compile(
 )
 
 
-def is_university_tech_role(title: str) -> bool:
-    return bool(_UNIVERSITY_TECH_RE.search(title)) and not _STUDENT_ROLE_RE.search(
-        title
-    )
+def is_tech_role_title(title: str) -> bool:
+    return bool(_TECH_TITLE_RE.search(title)) and not _STUDENT_ROLE_RE.search(title)
 
 
 @dataclass(frozen=True)
@@ -139,6 +138,8 @@ class ShedEmployer:
     # ats_token must equal the agency slug (that's the job rows' company_token).
     neogov: NeogovConfig | None = None
     oracle_hcm: OracleHcmConfig | None = None
+    hrsmart: HrsmartConfig | None = None
+    extra_reach_tokens: tuple[str, ...] = ()
     tech_only: bool = False
     # Big national employers: keep only their local-office roles (drop national-remote
     # ones, which belong on /you, not this place-based radar).
@@ -200,11 +201,17 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Laramie",
         hq_state="WY",
         distance_mi=0,
-        careers_url="https://www.trihydro.com/careers",
+        provider=PROVIDER_HRSMART,
+        ats_token="trihydro",
+        hrsmart=HrsmartConfig(host="trihydro.hua.hrsmart.com"),
+        tech_only=True,
+        extra_reach_tokens=("cheyenne", "fort collins", "open, us"),
+        careers_url="https://trihydro.hua.hrsmart.com/hr/ats/JobSearch/viewAll",
         notes=(
             "Large Laramie-HQ environmental/engineering firm (~700 staff). "
-            "In-house software/GIS/data roles; the biggest private tech-adjacent "
-            "employer in town."
+            "In-house software/GIS/data roles, including connected-vehicle "
+            "software. Live Deltek (hrsmart) feed, tech roles in Laramie, "
+            "Cheyenne, Fort Collins or open location."
         ),
     ),
     # --- Cheyenne (~50 mi, I-80) ---
@@ -493,6 +500,13 @@ def role_in_shed(location: str | None, tier: str, *, local_only: bool = False) -
     return is_remote or any(t in loc for t in tokens)
 
 
+def in_reach(employer: ShedEmployer, location: str | None) -> bool:
+    loc = (location or "").lower()
+    return role_in_shed(location, employer.tier, local_only=employer.local_only) or any(
+        t in loc for t in employer.extra_reach_tokens
+    )
+
+
 def sync_registry(session: Session) -> int:
     """Upsert `SEED_EMPLOYERS` into commute_shed_employer (code is source of truth).
 
@@ -570,6 +584,7 @@ def commute_shed_snapshot(
     workday_client: WorkdayClient | None = None,
     neogov_client: NeogovClient | None = None,
     oracle_hcm_client: OracleHcmClient | None = None,
+    hrsmart_client: HrsmartClient | None = None,
 ) -> SnapshotResult:
     """Snapshot the live-feed subset of the registry into ats_jobs.
 
@@ -584,6 +599,7 @@ def commute_shed_snapshot(
     workday_client = workday_client or WorkdayClient()
     neogov_client = neogov_client or NeogovClient()
     oracle_hcm_client = oracle_hcm_client or OracleHcmClient()
+    hrsmart_client = hrsmart_client or HrsmartClient()
     run_at = datetime.now(tz=UTC)
     feeds = [e for e in SEED_EMPLOYERS if e.provider and e.ats_token]
     refreshed: list[str] = []
@@ -613,6 +629,14 @@ def commute_shed_snapshot(
                     )
                     continue
                 jobs = oracle_hcm_client.fetch(e.ats_token, e.name, e.oracle_hcm)  # type: ignore[arg-type]
+            elif e.provider == PROVIDER_HRSMART:
+                if e.hrsmart is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is hrsmart but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = hrsmart_client.fetch(e.ats_token, e.name, e.hrsmart)  # type: ignore[arg-type]
             else:
                 company = Company(name=e.name, provider=e.provider, token=e.ats_token)  # type: ignore[arg-type]
                 jobs = client.fetch_company(company)
@@ -626,8 +650,8 @@ def commute_shed_snapshot(
         kept = [
             replace(j, source=SOURCE_COMMUTE_SHED, id_namespace=SOURCE_COMMUTE_SHED)
             for j in jobs
-            if role_in_shed(j.location, e.tier, local_only=e.local_only)
-            and (not e.tech_only or is_university_tech_role(j.title))
+            if in_reach(e, j.location)
+            and (not e.tech_only or is_tech_role_title(j.title))
         ]
         upsert_jobs(session, kept, run_at)
         close_missing(

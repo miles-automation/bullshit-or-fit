@@ -15,7 +15,7 @@ from app.jobtrends.commute_shed import (
     TIER_WY_REMOTE,
     commute_shed_report,
     commute_shed_snapshot,
-    is_university_tech_role,
+    is_tech_role_title,
     record_daily_stats,
     role_in_shed,
 )
@@ -245,7 +245,7 @@ def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
     ],
 )
 def test_university_filter_keeps_real_tech_titles(title: str) -> None:
-    assert is_university_tech_role(title)
+    assert is_tech_role_title(title)
 
 
 @pytest.mark.parametrize(
@@ -265,7 +265,7 @@ def test_university_filter_keeps_real_tech_titles(title: str) -> None:
     ],
 )
 def test_university_filter_drops_non_tech_titles(title: str) -> None:
-    assert not is_university_tech_role(title)
+    assert not is_tech_role_title(title)
 
 
 def test_universities_are_registered_with_live_tech_filtered_feeds() -> None:
@@ -376,3 +376,18 @@ def test_snapshot_filters_and_isolates_a_failed_employer(
     assert upserted == ["Systems Administrator"]
     assert closed == ["good"]
     assert result.refreshed_tokens == ("good",)
+
+
+def test_trihydro_feed_reaches_front_range_cheyenne_and_open_roles() -> None:
+    from app.jobtrends.commute_shed import in_reach
+    from app.jobtrends.hrsmart import PROVIDER_HRSMART
+
+    tri = next(e for e in SEED_EMPLOYERS if e.token == "trihydro")
+    assert tri.provider == PROVIDER_HRSMART and tri.hrsmart is not None
+    assert tri.tech_only
+    assert in_reach(tri, "Fort Collins, CO, US / Laramie, WY, US")
+    assert in_reach(tri, "Fort Collins, CO, US")
+    assert in_reach(tri, "Cheyenne, WY, US")
+    assert in_reach(tri, "Open, US")
+    assert not in_reach(tri, "Anaconda, MT, US 59711")
+    assert not in_reach(tri, "Salt Lake City, UT, US 84044")
