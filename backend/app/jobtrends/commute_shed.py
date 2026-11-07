@@ -205,7 +205,7 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         ats_token="trihydro",
         hrsmart=HrsmartConfig(host="trihydro.hua.hrsmart.com"),
         tech_only=True,
-        extra_reach_tokens=("cheyenne", "fort collins", "open, us"),
+        extra_reach_tokens=("cheyenne, wy", "fort collins, co", "open, us"),
         careers_url="https://trihydro.hua.hrsmart.com/hr/ats/JobSearch/viewAll",
         notes=(
             "Large Laramie-HQ environmental/engineering firm (~700 staff). "
@@ -501,9 +501,11 @@ def role_in_shed(location: str | None, tier: str, *, local_only: bool = False) -
 
 
 def in_reach(employer: ShedEmployer, location: str | None) -> bool:
-    loc = (location or "").lower()
+    entries = [e.strip().lower() for e in (location or "").split(" / ")]
     return role_in_shed(location, employer.tier, local_only=employer.local_only) or any(
-        t in loc for t in employer.extra_reach_tokens
+        entry.startswith(token)
+        for entry in entries
+        for token in employer.extra_reach_tokens
     )
 
 

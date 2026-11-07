@@ -64,7 +64,8 @@ def test_parse_ignores_pages_without_the_results_table() -> None:
 
 def test_parse_total_reads_count_and_empty_board() -> None:
     assert parse_total(_page([], 34, shown=25)) == 34
-    assert parse_total("<p>No jobs found</p>") == 0
+    assert parse_total(_page([], 0)) == 0
+    assert parse_total("<p>No jobs found</p>") is None
     assert parse_total("<html>login required</html>") is None
 
 
@@ -87,7 +88,29 @@ def test_client_paginates_until_total() -> None:
 
 
 def test_client_accepts_a_genuinely_empty_board() -> None:
-    assert _client({1: "<p>No jobs found</p>"}).fetch("acme", "Acme", CFG) == []
+    assert _client({1: _page([], 0)}).fetch("acme", "Acme", CFG) == []
+
+
+def test_client_raises_on_error_page_saying_no_records() -> None:
+    page = "<h1>Job search unavailable</h1><p>No records found</p>"
+    with pytest.raises(ValueError):
+        _client({1: page}).fetch("acme", "Acme", CFG)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        '<tr><td><a href="/hr/ats/Posting/view/7"><span>Dev</span></a></td>'
+        "<td> </td><td>x</td></tr>",
+        '<tr><td><a href="/hr/ats/Posting/view/7"><span>Dev</span></a></td>'
+        "<td>x</td></tr>",
+        '<tr><td><a href="/hr/ats/Posting/view/7"></a></td>'
+        "<td>Laramie, WY, US</td><td>x</td></tr>",
+    ],
+)
+def test_parse_raises_on_malformed_posting_rows(row: str) -> None:
+    with pytest.raises(ValueError):
+        parse_hrsmart("acme", "Acme", CFG, _page([row], 1))
 
 
 def test_client_raises_without_a_job_count() -> None:

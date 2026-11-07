@@ -43,6 +43,8 @@ def _locations(cell: str) -> str | None:
 
 
 def parse_total(page: str) -> int | None:
+    if _TABLE_ID not in page:
+        return None
     plain = _text(re.sub(r"(?s)<(script|style)[^>]*>.*?</\1>", " ", page))
     match = _TOTAL_RE.search(plain)
     if match:
@@ -63,13 +65,14 @@ def parse_hrsmart(
     jobs: list[ParsedJob] = []
     for row in _ROW_RE.findall(table):
         posting = _POSTING_RE.search(row)
+        if not posting:
+            continue
         cells = _CELL_RE.findall(row)
-        if not posting or len(cells) < 2:
-            continue
-        title = _text(cells[0])
-        if not title:
-            continue
         posting_id = posting.group(1)
+        title = _text(cells[0]) if cells else ""
+        location = _locations(cells[1]) if len(cells) >= 3 else None
+        if not title or not location:
+            raise ValueError(f"hrsmart posting {posting_id} is malformed: {cfg.host}")
         jobs.append(
             ParsedJob(
                 provider=PROVIDER_HRSMART,
@@ -77,7 +80,7 @@ def parse_hrsmart(
                 company_name=company_name,
                 external_id=posting_id,
                 title=title,
-                location=_locations(cells[1]),
+                location=location,
                 department=None,
                 url=f"https://{cfg.host}/hr/ats/Posting/view/{posting_id}",
                 content_text=title,

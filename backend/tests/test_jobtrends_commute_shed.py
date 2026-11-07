@@ -391,3 +391,5 @@ def test_trihydro_feed_reaches_front_range_cheyenne_and_open_roles() -> None:
     assert in_reach(tri, "Open, US")
     assert not in_reach(tri, "Anaconda, MT, US 59711")
     assert not in_reach(tri, "Salt Lake City, UT, US 84044")
+    assert not in_reach(tri, "Cheyenne Wells, CO, US")
+    assert not in_reach(tri, "Fort Collinsville, TX, US")
