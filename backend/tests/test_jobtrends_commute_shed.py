@@ -1,16 +1,31 @@
 """Unit tests for the commute-shed radar (pure reach-filter + fake-session report)."""
 
+from typing import Any
+
+import pytest
+
+from app.jobtrends import commute_shed as commute_shed_module
+from app.jobtrends.ats import AtsClient, ParsedJob
 from app.jobtrends.commute_shed import (
     SEED_EMPLOYERS,
+    ShedEmployer,
     TIER_CHEYENNE,
     TIER_FRONT_RANGE,
     TIER_LARAMIE,
     TIER_WY_REMOTE,
     commute_shed_report,
+    commute_shed_snapshot,
+    is_university_tech_role,
     record_daily_stats,
     role_in_shed,
 )
 from app.jobtrends.models import CommuteShedEmployer
+from app.jobtrends.workday import parse_workday
+from app.jobtrends.oracle_hcm import (
+    PROVIDER_ORACLE_HCM,
+    OracleHcmClient,
+    OracleHcmConfig,
+)
 
 
 # ---- id namespacing: parallel streams never collide ---------------------
@@ -212,3 +227,152 @@ def test_report_groups_by_tier_with_live_counts_and_map_only_nulls() -> None:
     assert r.movers[0].opened_30d == 5 and r.movers[0].net_30d == 4
 
     assert len(r.roles) == 1 and r.roles[0].company == "Ursamajor"
+
+
+# ---- university feeds ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Research Computing & Systems Administrator",
+        "IT Support Technician I",
+        "26-124 Research Data Engineer/Statistical Programmer Part-time",
+        "Open Source Forest Data Analyst",
+        "Reporting Engineer",
+        "Student Information Systems Administrator",
+        "Non-Student Hourly - IT Support Technician",
+    ],
+)
+def test_university_filter_keeps_real_tech_titles(title: str) -> None:
+    assert is_university_tech_role(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Radiology Technologist - R.T.",
+        "Advanced Imaging Technologist (MRI)-2",
+        "Licensing Manager - Technology Transfer Office",
+        "Hourly Pooled - IT Maint. Technician Assistant",
+        "Work Study - Data Assistant - WYNDD",
+        "Hourly Pooled-Event Technology Intern",
+        "Engineer, Senior - Facilities Engineering",
+        "Facilities Maintenance Technician – Mechanical Systems",
+        "Make it happen coordinator",
+        "Student Hourly - IT Support Technician",
+        "Student Web Developer",
+    ],
+)
+def test_university_filter_drops_non_tech_titles(title: str) -> None:
+    assert not is_university_tech_role(title)
+
+
+def test_universities_are_registered_with_live_tech_filtered_feeds() -> None:
+    by_token = {e.token: e for e in SEED_EMPLOYERS}
+    uw = by_token["university-of-wyoming"]
+    csu = by_token["colorado-state-university"]
+    assert uw.provider == PROVIDER_ORACLE_HCM and uw.oracle_hcm is not None
+    assert uw.tier == TIER_LARAMIE and uw.tech_only
+    assert csu.workday is not None and csu.tier == TIER_FRONT_RANGE
+    assert csu.tech_only and csu.local_only
+
+
+def test_csfs_durango_is_not_in_reach_for_csu() -> None:
+    csu = next(e for e in SEED_EMPLOYERS if e.token == "colorado-state-university")
+    assert csu.workday is not None
+    payload = {
+        "jobPostings": [
+            {"title": "GIS Analyst", "externalPath": "/job/CSFS-Durango/GIS_1"},
+            {"title": "IT Support", "externalPath": "/job/Sage-Hall/IT_2"},
+        ]
+    }
+    locations = [j.location for j in parse_workday("c", "C", csu.workday, payload)]
+    reach = [
+        role_in_shed(loc, csu.tier, local_only=csu.local_only) for loc in locations
+    ]
+    assert reach == [False, True]
+
+
+def _uw_job(title: str, location: str) -> ParsedJob:
+    return ParsedJob(
+        provider=PROVIDER_ORACLE_HCM,
+        company_token="good",
+        company_name="Good",
+        external_id=title,
+        title=title,
+        location=location,
+        department=None,
+        url=None,
+        content_text=title,
+        posted_at=None,
+    )
+
+
+def _oracle_employer(token: str) -> ShedEmployer:
+    return ShedEmployer(
+        token=token,
+        name=token,
+        tier=TIER_LARAMIE,
+        category="university",
+        careers_url="https://example.com",
+        provider=PROVIDER_ORACLE_HCM,
+        ats_token=token,
+        oracle_hcm=OracleHcmConfig(host=f"{token}.example.com", site="CX_1"),
+        tech_only=True,
+    )
+
+
+class _SnapshotSession:
+    def execute(self, _stmt: Any) -> None:
+        return None
+
+    def commit(self) -> None:
+        return None
+
+    def scalar(self, _stmt: Any) -> int:
+        return 0
+
+
+class _FlakyOracleClient(OracleHcmClient):
+    def fetch(
+        self, company_token: str, company_name: str, cfg: OracleHcmConfig
+    ) -> list[ParsedJob]:
+        if company_token == "bad":
+            raise RuntimeError("boom")
+        return [
+            _uw_job("Systems Administrator", "Laramie, WY, United States"),
+            _uw_job("Software Developer", "Powell, WY, United States"),
+            _uw_job("Assistant Professor - Zoology", "Laramie, WY, United States"),
+        ]
+
+
+def test_snapshot_filters_and_isolates_a_failed_employer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upserted: list[str] = []
+    closed: list[str] = []
+
+    def fake_upsert(_session: Any, jobs: list[ParsedJob], _run_at: Any) -> None:
+        upserted.extend(j.title for j in jobs)
+
+    def fake_close(_session: Any, _run_at: Any, **kwargs: Any) -> None:
+        closed.append(kwargs["company_token"])
+
+    monkeypatch.setattr(
+        commute_shed_module,
+        "SEED_EMPLOYERS",
+        [_oracle_employer("bad"), _oracle_employer("good")],
+    )
+    monkeypatch.setattr(commute_shed_module, "upsert_jobs", fake_upsert)
+    monkeypatch.setattr(commute_shed_module, "close_missing", fake_close)
+
+    result = commute_shed_snapshot(
+        _SnapshotSession(),  # type: ignore[arg-type]
+        AtsClient(),
+        oracle_hcm_client=_FlakyOracleClient(),
+    )
+
+    assert upserted == ["Systems Administrator"]
+    assert closed == ["good"]
+    assert result.refreshed_tokens == ("good",)
