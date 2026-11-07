@@ -132,7 +132,7 @@ class WorkdayClient:
             "Accept": "application/json",
         }
         by_path: dict[str, ParsedJob] = {}
-        expected_total: int | None = None
+        expected_total = 0
         with httpx.Client(
             timeout=self.timeout_seconds, transport=self._transport
         ) as client:
@@ -146,19 +146,19 @@ class WorkdayClient:
                 resp = client.post(url, json=body, headers=headers)
                 resp.raise_for_status()
                 payload = resp.json()
-                if page == 0 and isinstance(payload.get("total"), int):
-                    expected_total = payload["total"]
+                if page == 0:
+                    total = payload.get("total")
+                    if not isinstance(total, int):
+                        raise ValueError(f"workday response has no total: {url}")
+                    expected_total = total
                 postings = payload.get("jobPostings") or []
                 if not postings:
                     break
                 for job in parse_workday(company_token, company_name, cfg, payload):
                     by_path[job.external_id] = job
-                if (
-                    expected_total is not None
-                    and (page + 1) * _PAGE_SIZE >= expected_total
-                ):
+                if (page + 1) * _PAGE_SIZE >= expected_total:
                     break
-        if expected_total is not None and len(by_path) < expected_total:
+        if len(by_path) < expected_total:
             raise ValueError(
                 f"workday returned {len(by_path)} of {expected_total} jobs: {url}"
             )

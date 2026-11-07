@@ -79,20 +79,21 @@ def test_client_paginates_until_total_reached() -> None:
     assert seen_offsets == [0, 20]  # stopped once (page+1)*20 >= total
 
 
-def test_client_stops_on_empty_page_without_a_total() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        import json
+def test_client_raises_when_first_page_has_no_total() -> None:
+    client = WorkdayClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+    )
+    with pytest.raises(ValueError):
+        client.fetch("t", "T", CFG)
 
-        off = json.loads(request.content)["offset"]
-        if off == 0:
-            page = _page(["/job/Fort-Collins/A_1"], 999)
-            page.pop("total")
-            return httpx.Response(200, json=page)
-        return httpx.Response(200, json={"jobPostings": []})
 
-    client = WorkdayClient(transport=httpx.MockTransport(handler))
-    jobs = client.fetch("t", "T", CFG)
-    assert len(jobs) == 1
+def test_client_accepts_a_genuinely_empty_board() -> None:
+    client = WorkdayClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"total": 0, "jobPostings": []})
+        )
+    )
+    assert client.fetch("t", "T", CFG) == []
 
 
 def test_client_ignores_zero_total_on_later_pages() -> None:
