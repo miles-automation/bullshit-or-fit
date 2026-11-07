@@ -26,6 +26,7 @@ history accrues from first deploy forward.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
@@ -42,6 +43,11 @@ from app.jobtrends.ats import (
 from app.jobtrends.geo import classify_location
 from app.jobtrends.models import AtsJob, CommuteShedEmployer, CommuteShedStat
 from app.jobtrends.neogov import PROVIDER_NEOGOV, NeogovClient, NeogovConfig
+from app.jobtrends.oracle_hcm import (
+    PROVIDER_ORACLE_HCM,
+    OracleHcmClient,
+    OracleHcmConfig,
+)
 from app.jobtrends.workday import PROVIDER_WORKDAY, WorkdayClient, WorkdayConfig
 
 logger = logging.getLogger(__name__)
@@ -88,6 +94,27 @@ _TIER_AREA_TOKENS: dict[str, tuple[str, ...]] = {
 # local_only matches only the specific-metro tokens.
 _BROAD_AREA_TOKENS = frozenset({"colorado"})
 
+_UNIVERSITY_TECH_RE = re.compile(
+    r"\b(?:software|developer|programmer|(?-i:IT)|information technology|"
+    r"information security|cyber\w*|research computing|computer science|"
+    r"computer information|computing|hpc|database|devops|cloud engineer|"
+    r"machine learning|artificial intelligence|business intelligence|etl|gis|"
+    r"data (?:analyst|engineer|scientist|architect|manager)|reporting engineer|"
+    r"systems? (?:analyst|administrator|engineer|programmer|architect)|"
+    r"network (?:engineer|administrator|analyst)|web developer|webmaster)\b",
+    re.IGNORECASE,
+)
+_STUDENT_ROLE_RE = re.compile(
+    r"^\s*(?:work study|hourly pooled)\b|\b(?:intern|internship|student)\b",
+    re.IGNORECASE,
+)
+
+
+def is_university_tech_role(title: str) -> bool:
+    return bool(_UNIVERSITY_TECH_RE.search(title)) and not _STUDENT_ROLE_RE.search(
+        title
+    )
+
 
 @dataclass(frozen=True)
 class ShedEmployer:
@@ -109,6 +136,8 @@ class ShedEmployer:
     # NEOGOV (governmentjobs.com) gov employers: provider='neogov' + this config;
     # ats_token must equal the agency slug (that's the job rows' company_token).
     neogov: NeogovConfig | None = None
+    oracle_hcm: OracleHcmConfig | None = None
+    tech_only: bool = False
     # Big national employers: keep only their local-office roles (drop national-remote
     # ones, which belong on /you, not this place-based radar).
     local_only: bool = False
@@ -118,9 +147,9 @@ class ShedEmployer:
 
 # --- The curated map -------------------------------------------------------
 # Real employers reachable from Laramie, WY. Live feeds: Ursa Major + Anduril/
-# ex-Numerica (Greenhouse), JumpCloud (Lever), Broadcom + HPE (Workday CXS,
-# Fort-Collins-filtered), and State of Wyoming (NEOGOV, tech-filtered — the local
-# long tail). The rest are Taleo/iCIMS/private, so they're map-only (careers_url +
+# ex-Numerica (Greenhouse), JumpCloud (Lever), Broadcom + HPE + Colorado State
+# (Workday CXS, Fort-Collins-filtered), State of Wyoming (NEOGOV, tech-filtered — the
+# local long tail), and University of Wyoming (Oracle HCM, tech-filtered). The rest are Taleo/iCIMS/private, so they're map-only (careers_url +
 # notes) until a feed is found. Watch for acquisitions (Teton→Markforged,
 # Numerica→Anduril) staling careers URLs. Add rows freely — sync picks them up; a
 # token dropped here is auto-deactivated.
@@ -134,11 +163,15 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         hq_city="Laramie",
         hq_state="WY",
         distance_mi=0,
-        careers_url="https://www.uwyo.edu/hr/prospective/",
+        provider=PROVIDER_ORACLE_HCM,
+        ats_token="university-of-wyoming",
+        oracle_hcm=OracleHcmConfig(host="eeik.fa.us2.oraclecloud.com", site="CX_1"),
+        tech_only=True,
+        careers_url="https://eeik.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1",
         notes=(
             "The anchor employer in town. School of Computing + ARCC research "
-            "computing; research-software-engineer / staff roles post on "
-            "HigherEdJobs. Steady, benefits, in-person."
+            "computing. Live Oracle HCM feed, tech roles in Laramie only; student "
+            "jobs excluded. Steady, benefits, in-person."
         ),
     ),
     ShedEmployer(
@@ -285,6 +318,31 @@ SEED_EMPLOYERS: list[ShedEmployer] = [
         notes=(
             "Large Fort Collins R&D site — systems/firmware/cloud/HPC SWE. "
             "Live Workday feed (Fort Collins–filtered)."
+        ),
+    ),
+    ShedEmployer(
+        token="colorado-state-university",
+        name="Colorado State University",
+        tier=TIER_FRONT_RANGE,
+        category="university",
+        hq_city="Fort Collins",
+        hq_state="CO",
+        distance_mi=65,
+        provider=PROVIDER_WORKDAY,
+        ats_token="colorado-state-university",
+        workday=WorkdayConfig(
+            tenant="csusystem",
+            host="wd12",
+            site="fortcollins_careers",
+            campus_city="Fort Collins",
+        ),
+        tech_only=True,
+        local_only=True,
+        careers_url="https://csusystem.wd12.myworkdayjobs.com/fortcollins_careers",
+        notes=(
+            "Research computing, IT and research data roles. Live Workday feed, tech "
+            "roles at the Fort Collins campus only; far-flung CEMML sites and student "
+            "jobs excluded."
         ),
     ),
     ShedEmployer(
@@ -491,6 +549,7 @@ def commute_shed_snapshot(
     client: AtsClient,
     workday_client: WorkdayClient | None = None,
     neogov_client: NeogovClient | None = None,
+    oracle_hcm_client: OracleHcmClient | None = None,
 ) -> SnapshotResult:
     """Snapshot the live-feed subset of the registry into ats_jobs.
 
@@ -504,6 +563,7 @@ def commute_shed_snapshot(
     """
     workday_client = workday_client or WorkdayClient()
     neogov_client = neogov_client or NeogovClient()
+    oracle_hcm_client = oracle_hcm_client or OracleHcmClient()
     run_at = datetime.now(tz=UTC)
     feeds = [e for e in SEED_EMPLOYERS if e.provider and e.ats_token]
     refreshed: list[str] = []
@@ -525,6 +585,14 @@ def commute_shed_snapshot(
                     )
                     continue
                 jobs = neogov_client.fetch(e.neogov)
+            elif e.provider == PROVIDER_ORACLE_HCM:
+                if e.oracle_hcm is None:
+                    logger.warning(
+                        "jobtrends: commute-shed %s is oracle_hcm but has no config",
+                        e.ats_token,
+                    )
+                    continue
+                jobs = oracle_hcm_client.fetch(e.ats_token, e.name, e.oracle_hcm)  # type: ignore[arg-type]
             else:
                 company = Company(name=e.name, provider=e.provider, token=e.ats_token)  # type: ignore[arg-type]
                 jobs = client.fetch_company(company)
@@ -539,6 +607,7 @@ def commute_shed_snapshot(
             replace(j, source=SOURCE_COMMUTE_SHED, id_namespace=SOURCE_COMMUTE_SHED)
             for j in jobs
             if role_in_shed(j.location, e.tier, local_only=e.local_only)
+            and (not e.tech_only or is_university_tech_role(j.title))
         ]
         upsert_jobs(session, kept, run_at)
         close_missing(

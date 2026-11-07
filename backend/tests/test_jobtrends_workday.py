@@ -69,7 +69,7 @@ def test_client_paginates_until_total_reached() -> None:
                 200, json=_page([f"/job/Fort-Collins/R{i}_{i}" for i in range(20)], 30)
             )
         return httpx.Response(
-            200, json=_page([f"/job/Fort-Collins/R{i}_{i}" for i in range(10)], 30)
+            200, json=_page([f"/job/Fort-Collins/R{i}_{i}" for i in range(20, 30)], 30)
         )
 
     client = WorkdayClient(transport=httpx.MockTransport(handler))
@@ -90,3 +90,53 @@ def test_client_stops_on_empty_page() -> None:
     client = WorkdayClient(transport=httpx.MockTransport(handler))
     jobs = client.fetch("t", "T", CFG)
     assert len(jobs) == 1  # empty second page breaks the loop despite total=999
+
+
+def test_client_ignores_zero_total_on_later_pages() -> None:
+    import json
+
+    offsets: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        off = json.loads(request.content)["offset"]
+        offsets.append(off)
+        paths = [f"/job/Fort-Collins-CO/R{off + i}_{off + i}" for i in range(20)]
+        return httpx.Response(200, json=_page(paths, 60 if off == 0 else 0))
+
+    client = WorkdayClient(transport=httpx.MockTransport(handler))
+    jobs = client.fetch("t", "T", CFG)
+    assert offsets == [0, 20, 40]
+    assert len(jobs) == 60
+
+
+def test_client_dedupes_repeated_postings() -> None:
+    same = _page([f"/job/Fort-Collins-CO/R{i}_{i}" for i in range(20)], 40)
+    client = WorkdayClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=same))
+    )
+    assert len(client.fetch("t", "T", CFG)) == 20
+
+
+def test_campus_city_tags_building_locations_only() -> None:
+    cfg = WorkdayConfig(
+        tenant="csusystem",
+        host="wd12",
+        site="fortcollins_careers",
+        campus_city="Fort Collins",
+    )
+    payload = _page(
+        [
+            "/job/Sage-Hall/IT-Support_1",
+            "/job/Fort-Collins-CO/IT-Support_2",
+            "/job/CEMML---Devens-MA/GIS-Analyst_3",
+            "/job/Denver-CO-Spur/IT-Support_4",
+        ],
+        4,
+    )
+    locations = [j.location for j in parse_workday("c", "C", cfg, payload)]
+    assert locations == [
+        "Sage Hall, Fort Collins",
+        "Fort Collins CO",
+        "CEMML   Devens MA",
+        "Denver CO Spur",
+    ]

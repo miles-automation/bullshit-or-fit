@@ -38,7 +38,8 @@ PROVIDER_WORKDAY = "workday"
 # Safety cap on pagination: searchText already narrows to a metro, so a handful of
 # pages is plenty; this just stops a runaway loop on a huge/misconfigured board.
 _PAGE_SIZE = 20
-_MAX_PAGES = 8
+_MAX_PAGES = 25
+_STATE_CODE_RE = re.compile(r"\b[A-Z]{2}\b")
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class WorkdayConfig:
     host: str  # the wd shard, e.g. "wd5"
     site: str  # career-site id, e.g. "Jobsathpe"
     search: str = ""  # searchText pre-filter (a city name), coarse
+    campus_city: str | None = None
 
 
 def _base_url(cfg: WorkdayConfig) -> str:
@@ -63,6 +65,17 @@ def _location_from_path(external_path: str) -> str | None:
     return m.group(1).replace("-", " ") if m else None
 
 
+def _location(
+    cfg: WorkdayConfig, external_path: str, fallback: str | None
+) -> str | None:
+    location = _location_from_path(external_path)
+    if location is None:
+        return fallback
+    if cfg.campus_city and not _STATE_CODE_RE.search(location):
+        return f"{location}, {cfg.campus_city}"
+    return location
+
+
 def parse_workday(
     company_token: str, company_name: str, cfg: WorkdayConfig, payload: dict
 ) -> list[ParsedJob]:
@@ -75,7 +88,7 @@ def parse_workday(
         if not path:
             continue
         title = str(j.get("title") or "").strip()
-        location = _location_from_path(path) or (j.get("locationsText") or None)
+        location = _location(cfg, path, j.get("locationsText") or None)
         jobs.append(
             ParsedJob(
                 provider=PROVIDER_WORKDAY,
@@ -118,7 +131,8 @@ class WorkdayClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        out: list[ParsedJob] = []
+        by_path: dict[str, ParsedJob] = {}
+        expected_total: int | None = None
         with httpx.Client(
             timeout=self.timeout_seconds, transport=self._transport
         ) as client:
@@ -135,8 +149,13 @@ class WorkdayClient:
                 postings = payload.get("jobPostings") or []
                 if not postings:
                     break
-                out.extend(parse_workday(company_token, company_name, cfg, payload))
-                total = payload.get("total")
-                if isinstance(total, int) and (page + 1) * _PAGE_SIZE >= total:
+                for job in parse_workday(company_token, company_name, cfg, payload):
+                    by_path[job.external_id] = job
+                if page == 0 and isinstance(payload.get("total"), int):
+                    expected_total = payload["total"]
+                if (
+                    expected_total is not None
+                    and (page + 1) * _PAGE_SIZE >= expected_total
+                ):
                     break
-        return out
+        return list(by_path.values())
