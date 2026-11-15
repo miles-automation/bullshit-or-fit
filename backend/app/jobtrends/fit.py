@@ -25,7 +25,7 @@ _EXCLUDED_ROLE = re.compile(
     re.I,
 )
 _EXCLUDED_LANGUAGE = re.compile(
-    r"(\b(go|golang|rust|java|scala|elixir|php|kotlin|haskell|clojure|ocaml)\b|c\+\+)",
+    r"(\b(go|golang|rust|scala|elixir|php|kotlin|haskell|clojure|ocaml)\b|c\+\+)",
     re.I,
 )
 _COMMUTE = re.compile(r"\b(fort collins|cheyenne|laramie|loveland|windsor, co)\b", re.I)
@@ -273,7 +273,7 @@ def clearance_status(text: str | None) -> str | None:
 
 
 _OTHER_LANGUAGE = re.compile(
-    r"\b(rust|golang|java(?!script)|kotlin|scala|haskell|elixir|clojure|ocaml|erlang|php)\b"
+    r"\b(rust|golang|kotlin|scala|haskell|elixir|clojure|ocaml|erlang|php)\b"
     r"|c\+\+",
     re.I,
 )
@@ -284,7 +284,7 @@ _GO = re.compile(
     r"|proficiency|knowledge|development|services?\b|code\b|programming|microservices))"
 )
 _MY_LANGUAGE = re.compile(
-    r"(?<![\w.])(python|typescript|javascript|node\.?js|react|swift|c#)(?!\w)"
+    r"(?<![\w.])(python|typescript|javascript|java|node\.?js|react|swift|c#)(?!\w)"
     r"|(?<!\w)\.net\b",
     re.I,
 )
