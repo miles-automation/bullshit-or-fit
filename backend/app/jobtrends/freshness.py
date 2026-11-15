@@ -28,6 +28,7 @@ SOURCE_MAX_AGE: dict[str, timedelta] = {
     "remote_board": DEFAULT_MAX_AGE,
     "adzuna": DEFAULT_MAX_AGE,
     "commute_shed": DEFAULT_MAX_AGE,
+    "himalayas": DEFAULT_MAX_AGE,
     "hn": HN_MAX_AGE,
 }
 

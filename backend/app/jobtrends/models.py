@@ -242,6 +242,22 @@ class AtsJob(Base):
     comp_currency: Mapped[str | None] = mapped_column(Text)
     comp_period: Mapped[str | None] = mapped_column(Text)
     comp_kind: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DiscoveredBoard(Base):
+    __tablename__ = "discovered_boards"
+    __table_args__ = {"schema": SCHEMA}
+
+    origin: Mapped[str] = mapped_column(Text, primary_key=True)
+    company_slug: Mapped[str] = mapped_column(Text, primary_key=True)
+    company_name: Mapped[str] = mapped_column(Text, nullable=False)
+    team_size: Mapped[int | None] = mapped_column(Integer)
+    website: Mapped[str | None] = mapped_column(Text)
+    provider: Mapped[str | None] = mapped_column(Text)
+    token: Mapped[str | None] = mapped_column(Text)
+    found: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
+    probed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class CommuteShedEmployer(Base):
