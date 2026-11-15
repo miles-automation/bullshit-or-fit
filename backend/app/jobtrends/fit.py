@@ -308,7 +308,8 @@ _ANY_LANGUAGE = re.compile(
     r"\b(comparable|similar|equivalent|any modern|another)\b", re.I
 )
 _WAIVER = re.compile(
-    r"\b(no|not|without)\b[^,;.]{0,40}\b(experience|required|necessary|needed|expected)\b"
+    r"(\b(no|not|without)\b|n't\b)[^,;.]{0,40}\b(experience|required|necessary|needed|expected"
+    r"|essential|mandatory|a must)\b"
     r"|\b(will|we'll|we will) teach\b|\bno prior\b",
     re.I,
 )
@@ -323,12 +324,30 @@ def _other_language_mentions(text: str) -> int:
     return len(_OTHER_LANGUAGE.findall(text)) + len(_GO.findall(text))
 
 
+def _integration_only(clause: str) -> bool:
+    for m in _INTEGRATION.finditer(clause):
+        tail = clause[m.end() : m.end() + 40]
+        if _other_language_mentions(tail):
+            return True
+    return False
+
+
 def language_blocks(text: str | None) -> bool:
     body = text or ""
     mine = bool(_MY_LANGUAGE.search(body))
+    marks = _soft_scope_marks(body)
     mandatory = 0
-    for sentence in _SENTENCE.split(body):
+    start = 0
+    spans: list[tuple[int, int]] = []
+    for m in _SENTENCE.finditer(body):
+        spans.append((start, m.start()))
+        start = m.end()
+    spans.append((start, len(body)))
+    for begin, end in spans:
+        sentence = body[begin:end]
         if not _other_language_mentions(sentence):
+            continue
+        if _in_soft_scope(marks, end):
             continue
         if _ANY_LANGUAGE.search(sentence):
             continue
@@ -338,9 +357,10 @@ def language_blocks(text: str | None) -> bool:
             mentions = _other_language_mentions(clause)
             if not mentions or _SOFT_CUE.search(clause) or _WAIVER.search(clause):
                 continue
+            if _integration_only(clause):
+                continue
             if not _ABILITY.search(clause):
-                if not _INTEGRATION.search(clause):
-                    mandatory += mentions
+                mandatory += mentions
                 continue
             if _STRICT_CUE.search(clause) or not mine:
                 return True
