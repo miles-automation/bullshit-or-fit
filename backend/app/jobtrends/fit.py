@@ -363,7 +363,9 @@ def language_blocks(text: str | None) -> bool:
             if not mentions:
                 continue
             scope = clause
-            for following in clauses[index + 1 :]:
+            for following in (
+                [] if _EXPLICIT_REQUIRED.search(clause) else clauses[index + 1 :]
+            ):
                 if _other_language_mentions(following) or not _MODIFIER.match(
                     following
                 ):
