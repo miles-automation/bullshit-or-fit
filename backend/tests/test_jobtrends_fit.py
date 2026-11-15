@@ -162,6 +162,53 @@ def test_format_fit_list() -> None:
         ),
         ("Office of Clearance and Settlement oversees markets.", None),
         (
+            "Must currently hold an active Secret clearance and be able to obtain TS/SCI",
+            "required",
+        ),
+        ("Active Secret clearance required No visa sponsorship available", "required"),
+        (
+            "U.S. citizenship required and an active Secret clearance is preferred",
+            "sponsored",
+        ),
+        ("Active Secret clearance Python preferred", "required"),
+        ("Active Secret clearance required (no exceptions)", "required"),
+        ("Candidates do not need an active Secret clearance", None),
+        ("An active security clearance is not a prerequisite", None),
+        (
+            "Must possess and maintain a valid U.S. government-issued security clearance",
+            "required",
+        ),
+        ("Must possess an active Secret clearance upon hire", "required"),
+        ("Active Secret required", "required"),
+        ("U.S. citizenship required; no clearance needed", None),
+        (
+            "Clearance Level Must Currently Possess: None Clearance Level Must Be Able to Obtain: Secret",
+            "sponsored",
+        ),
+        ("Must be willing and able to obtain a Secret clearance", "sponsored"),
+        ("Our secret sauce is great people", None),
+        (
+            "Security Clearance: This position requires the ability to obtain a US Security Clearance for which the US Government requires US Citizenship",
+            "sponsored",
+        ),
+        (
+            "CLEARANCE: Must be able to obtain and maintain a US government security clearance",
+            "sponsored",
+        ),
+        (
+            "Candidates with an ACTIVE PUBLIC TRUST or SUITABILITY are preferred",
+            "sponsored",
+        ),
+        ("Clearance Required: Active Secret Clearance", "required"),
+        ("Security Clearance: TS/SCI", None),
+        ("Active security clearance Salary Range: $169,350 - $190,000", "required"),
+        ("Active Secret Clearance Pay Information GeoZone: D", "required"),
+        ("Security Clearance Requirement: NoneThis position is remote", None),
+        (
+            "Preferred Qualifications: a Secret Clearance (or higher level) is preferred",
+            "sponsored",
+        ),
+        (
             "An interim and/or final U.S. Secret Clearance Post-Start is required",
             "sponsored",
         ),
