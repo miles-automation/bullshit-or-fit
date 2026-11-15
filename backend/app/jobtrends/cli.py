@@ -230,11 +230,12 @@ def _cmd_himalayas_snapshot() -> int:
     return 0
 
 
-def _cmd_fit(days: int) -> int:
+def _cmd_fit(days: int, max_age: int) -> int:
     from app.jobtrends.fit import fit_roles, format_fit_list
 
     with SessionLocal() as session:
-        print(format_fit_list(fit_roles(session, days=days), days))  # noqa: T201
+        roles = fit_roles(session, days=days, max_age_days=max_age)
+        print(format_fit_list(roles, days))  # noqa: T201
     return 0
 
 
@@ -278,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("himalayas-snapshot", help="snapshot Himalayas remote US roles")
     p_fit = sub.add_parser("fit", help="new roles that fit Rich's search filters")
     p_fit.add_argument("--days", type=int, default=1)
+    p_fit.add_argument("--max-age", type=int, default=30)
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -321,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "himalayas-snapshot":
         return _cmd_himalayas_snapshot()
     if args.cmd == "fit":
-        return _cmd_fit(args.days)
+        return _cmd_fit(args.days, args.max_age)
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

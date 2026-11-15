@@ -203,7 +203,7 @@ def parse_greenhouse(company: Company, payload: Any) -> list[ParsedJob]:
                 department=depts[0] if depts else None,
                 url=j.get("absolute_url"),
                 content_text=content,
-                posted_at=_parse_dt(j.get("updated_at") or j.get("first_published")),
+                posted_at=_parse_dt(j.get("first_published")),
                 **(parsed_comp_fields(title, content) or {}),
             )
         )

@@ -1,9 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.jobtrends.fit import (
     FitRole,
+    language_blocks,
+    posting_fresh,
     clearance_status,
     comp_fits,
     format_fit_list,
@@ -27,6 +29,8 @@ from app.jobtrends.fit import (
         ("Senior iOS Engineer", False),
         ("Account Executive", False),
         ("Product Designer", False),
+        ("Senior Java Engineer", True),
+        ("Senior Kotlin Engineer", False),
         ("Staff Security Engineer", False),
         ("Software Engineer, Haskell", False),
         ("Engineering Leader, Platform Engineering", False),
@@ -84,18 +88,28 @@ def _role(**kw) -> FitRole:  # noqa: ANN003
     return FitRole(**base)
 
 
-def test_rank_puts_small_companies_first_then_pay() -> None:
-    big_rich = _role(company_name="Big", comp_max=300_000)
-    small = _role(company_name="Small", team_size=12)
-    mid = _role(company_name="Mid", comp_max=200_000)
-    assert sorted([mid, big_rich, small], key=rank_key) == [small, big_rich, mid]
+def test_rank_puts_small_companies_first_then_newest_then_pay() -> None:
+    day = datetime(2026, 11, 15, tzinfo=UTC)
+    small = _role(
+        company_name="Small", team_size=12, posted_at=day - timedelta(days=20)
+    )
+    fresh = _role(company_name="Fresh", posted_at=day, comp_max=160_000)
+    fresh_rich = _role(company_name="FreshRich", posted_at=day, comp_max=300_000)
+    old = _role(company_name="Old", posted_at=day - timedelta(days=9), comp_max=400_000)
+    assert sorted([old, fresh, small, fresh_rich], key=rank_key) == [
+        small,
+        fresh_rich,
+        fresh,
+        old,
+    ]
 
 
 def test_format_fit_list() -> None:
     text = format_fit_list([_role(team_size=12, comp_min=150_000, comp_max=200_000)], 1)
     assert "1 new fitting roles" in text
     assert (
-        "Acme, 12 people: Senior Software Engineer (Remote - US; $150k-$200k)" in text
+        "Acme, 12 people: Senior Software Engineer (Remote - US; $150k-$200k; first seen"
+        in text
     )
     assert format_fit_list([], 3) == "no new fitting roles in the last 3 day(s)"
 
@@ -288,3 +302,125 @@ def test_clearance_status_is_fast_on_pathological_input() -> None:
     for text in ("sponsor" * 3000, "obtain " * 3000, "clearance " * 3000, "a" * 60000):
         clearance_status(text)
     assert time.perf_counter() - start < 1.0
+
+
+def test_format_shows_posting_age() -> None:
+    now = datetime(2026, 11, 15, 12, tzinfo=UTC)
+    text = format_fit_list([_role(posted_at=now - timedelta(days=3))], 1, now=now)
+    assert "posted 3d ago" in text
+    assert "posted today" in format_fit_list([_role(posted_at=now)], 1, now=now)
+
+
+DITTO = (
+    "Build reliable Rust systems \u2014 Design and deliver production-grade libraries and services. "
+    "Relevant technical toolkit \u2014 You're comfortable building in Rust, writing asynchronous code."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (DITTO, True),
+        (
+            "Strong experience with Go in production. You will own our Go services.",
+            True,
+        ),
+        ("5+ years of professional Java experience required.", False),
+        ("Strong Java and Spring Boot required.", False),
+        ("Strong proficiency in Kotlin required.", True),
+        ("Must have Java and Rust experience.", True),
+        (
+            "We use Kotlin and Scala across the backend; experience with Kotlin required.",
+            True,
+        ),
+        ("Our stack is Python, TypeScript and some Go services.", False),
+        ("Experience with Python, Go, or Java in production.", False),
+        ("Python and Postgres. Rust experience is a plus.", False),
+        ("Build agents in Python. Familiarity with Rust is nice to have.", False),
+        ("Let's go build the future together. Go above and beyond.", False),
+        ("We write JavaScript and TypeScript everywhere.", False),
+        ("Strong C++ skills required for the trading engine.", True),
+        ("Nice to have: Rust. Bonus: Java.", False),
+        (
+            "Strong backend skills in at least one production language, such as Go, Rust, Node.js or Python.",
+            False,
+        ),
+        ("Working proficiency in Java or Node.js.", False),
+        (
+            "We build .NET services. We integrate with Java services and Java clients.",
+            False,
+        ),
+        ("Go and build the future with us.", False),
+        ("Go experience is required.", True),
+        ("3+ years of Go experience required.", True),
+        (
+            "Our frontend is TypeScript. You must have 5 years of production Rust experience.",
+            True,
+        ),
+        ("We use Rust and Kotlin internally.", True),
+        ("C# and .NET backend. Some Java tooling around the edges.", False),
+        ("Our backend is Python. No prior experience with Go is required.", False),
+        ("No Rust experience necessary. We will teach you Rust.", False),
+        (
+            "Our backend is Python. You must integrate with Java services in production.",
+            False,
+        ),
+        ("Must have Python and Rust experience.", True),
+        (
+            "Python backend. Rust experience required, Kubernetes experience a plus.",
+            True,
+        ),
+        ("Go expertise required.", True),
+        ("Rust experience isn't required. Our backend is Python.", False),
+        ("Python backend. Strong Rust skills are desirable.", False),
+        ("Python backend. Strong Rust experience isn\u2019t required.", False),
+        ("Python backend. Strong Rust experience is not a prerequisite.", False),
+        (
+            "Python backend. Production experience with Rust is not a requirement.",
+            False,
+        ),
+        (
+            "Python backend. Production experience with Rust, while not required, is a plus.",
+            False,
+        ),
+        (
+            "Python backend. Strong Rust experience required, but Kubernetes experience is optional.",
+            True,
+        ),
+        (
+            "Python backend. Strong Rust experience required, while Kubernetes experience is preferred.",
+            True,
+        ),
+        (
+            "Python backend. Production Rust experience required, and Kubernetes is a plus.",
+            True,
+        ),
+        ("Previous Rust experience is not essential.", False),
+        (
+            "Our backend is Python. Production experience integrating with Java services is required.",
+            False,
+        ),
+        ("Our backend is Python. Integrate with Go services and Rust clients.", False),
+        ("Preferred Qualifications: Experience with AWS. Experience with Rust.", False),
+        ("Preferred Qualifications: AWS. Requirements: Strong Rust experience.", True),
+        (
+            "Service-oriented architectures in Go, Java, or a comparable backend language.",
+            False,
+        ),
+        (
+            "7+ years of software development, including production systems, with Go as a primary language",
+            True,
+        ),
+        ("", False),
+    ],
+)
+def test_language_blocks(text: str, blocked: bool) -> None:
+    assert language_blocks(text) is blocked
+
+
+def test_posting_fresh_boundaries() -> None:
+    oldest = datetime(2026, 10, 16, tzinfo=UTC)
+    assert posting_fresh(None, oldest)
+    assert posting_fresh(oldest, oldest)
+    assert posting_fresh(oldest + timedelta(seconds=1), oldest)
+    assert not posting_fresh(oldest - timedelta(seconds=1), oldest)

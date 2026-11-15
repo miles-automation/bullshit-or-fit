@@ -13,6 +13,7 @@ from app.jobtrends.models import AtsJob, DiscoveredBoard
 
 FIT_SOURCES = (SOURCE_ATS, SOURCE_REMOTE, SOURCE_HIMALAYAS, "commute_shed", "adzuna")
 MIN_COMP_MAX = 150_000
+MAX_POSTING_AGE_DAYS = 30
 SMALL_TEAM = 100
 
 _ROLE = re.compile(r"\b(engineer|engineering|developer|architect)\b", re.I)
@@ -24,7 +25,7 @@ _EXCLUDED_ROLE = re.compile(
     re.I,
 )
 _EXCLUDED_LANGUAGE = re.compile(
-    r"(\b(go|golang|rust|java|scala|elixir|php|kotlin|haskell|clojure|ocaml)\b|c\+\+)",
+    r"(\b(go|golang|rust|scala|elixir|php|kotlin|haskell|clojure|ocaml)\b|c\+\+)",
     re.I,
 )
 _COMMUTE = re.compile(r"\b(fort collins|cheyenne|laramie|loveland|windsor, co)\b", re.I)
@@ -271,6 +272,122 @@ def clearance_status(text: str | None) -> str | None:
     return result
 
 
+_OTHER_LANGUAGE = re.compile(
+    r"\b(rust|golang|kotlin|scala|haskell|elixir|clojure|ocaml|erlang|php)\b"
+    r"|c\+\+",
+    re.I,
+)
+_GO = re.compile(
+    r"(?<=\bin )Go\b|(?<=\bwith )Go\b|(?<=\busing )Go\b|(?<=\bour )Go\b|(?<=\bof )Go\b"
+    r"|(?<=, )Go\b|(?<=/)Go\b|(?<=\()Go\b"
+    r"|\bGo\b(?=\s*(?:,|/|\)|or\b|developer|engineer|experience|expertise|skills?\b"
+    r"|proficiency|knowledge|development|services?\b|code\b|programming|microservices))"
+)
+_MY_LANGUAGE = re.compile(
+    r"(?<![\w.])(python|typescript|javascript|java|node\.?js|react|swift|c#)(?!\w)"
+    r"|(?<!\w)\.net\b",
+    re.I,
+)
+_STRICT_CUE = re.compile(
+    r"\b(strong|deep|expert\w*|proficien\w*|fluen\w*|production\w*|professional|required"
+    r"|requires?|must|years|primary|minimum)\b",
+    re.I,
+)
+_ABILITY = re.compile(
+    r"\b(experience\w*|expertise|proficien\w*|fluen\w*|skills?|years|knowledge|background"
+    r"|programming|develop\w*|writ\w*|coding|build\w*|primary language|comfortable)\b",
+    re.I,
+)
+_SOFT_CUE = re.compile(
+    r"\b(nice to have|nice-to-have|bonus|a plus|plus|preferred|ideally|familiarity|exposure"
+    r"|not required|optional|desirable|desired|helpful|advantageous|beneficial)\b",
+    re.I,
+)
+_ALTERNATIVE = re.compile(r"\b(or|such as|one of|at least one|any of|either)\b", re.I)
+_ANY_LANGUAGE = re.compile(
+    r"\b(comparable|similar|equivalent|any modern|another)\b", re.I
+)
+_WAIVER = re.compile(
+    r"(\b(no|not|without)\b|n't\b)[^,;.]{0,40}\b(experience|required|necessary|needed|expected"
+    r"|essential|mandatory|a must|a prerequisite|a requirement)\b"
+    r"|\b(will|we'll|we will) teach\b|\bno prior\b",
+    re.I,
+)
+_INTEGRATION = re.compile(
+    r"\b(integrat\w*|interfac\w*|interoperat\w*|talk\w* to|consum\w*|migrat\w*)\b", re.I
+)
+_SENTENCE = re.compile(r"\.(?=\s|$)|[;\n\u2022]|\s-\s|\s\u2014\s")
+_MODIFIER = re.compile(
+    r"\s*(while|though|although|but|which|if|when|is|are|was|not|ideally|preferably)\b",
+    re.I,
+)
+_COMMA = re.compile(r",(?!\s*or\b)")
+
+
+def _other_language_mentions(text: str) -> int:
+    return len(_OTHER_LANGUAGE.findall(text)) + len(_GO.findall(text))
+
+
+def _integration_only(clause: str) -> bool:
+    for m in _INTEGRATION.finditer(clause):
+        tail = clause[m.end() : m.end() + 40]
+        if _other_language_mentions(tail):
+            return True
+    return False
+
+
+def language_blocks(text: str | None) -> bool:
+    body = (text or "").replace("\u2019", "'")
+    mine = bool(_MY_LANGUAGE.search(body))
+    marks = _soft_scope_marks(body)
+    mandatory = 0
+    start = 0
+    spans: list[tuple[int, int]] = []
+    for m in _SENTENCE.finditer(body):
+        spans.append((start, m.start()))
+        start = m.end()
+    spans.append((start, len(body)))
+    for begin, end in spans:
+        sentence = body[begin:end]
+        if not _other_language_mentions(sentence):
+            continue
+        if _in_soft_scope(marks, end):
+            continue
+        if _ANY_LANGUAGE.search(sentence):
+            continue
+        if _MY_LANGUAGE.search(sentence) and _ALTERNATIVE.search(sentence):
+            continue
+        clauses = _COMMA.split(sentence)
+        for index, clause in enumerate(clauses):
+            mentions = _other_language_mentions(clause)
+            if not mentions:
+                continue
+            scope = clause
+            for following in (
+                [] if _EXPLICIT_REQUIRED.search(clause) else clauses[index + 1 :]
+            ):
+                if _other_language_mentions(following) or not _MODIFIER.match(
+                    following
+                ):
+                    break
+                scope += "," + following
+            if _SOFT_CUE.search(scope) or _WAIVER.search(scope):
+                continue
+            if _integration_only(clause):
+                continue
+            if not _ABILITY.search(clause):
+                mandatory += mentions
+                continue
+            if _STRICT_CUE.search(clause) or not mine:
+                return True
+            mandatory += mentions
+    return mandatory >= 2 and not mine
+
+
+def posting_fresh(posted_at: datetime | None, oldest: datetime) -> bool:
+    return posted_at is None or posted_at >= oldest
+
+
 def comp_fits(comp_max: int | None, currency: str | None) -> bool:
     if comp_max is None:
         return True
@@ -291,21 +408,28 @@ class FitRole:
     team_size: int | None
     first_seen: datetime
     clearance: str | None = None
+    posted_at: datetime | None = None
+
+    @property
+    def listed_at(self) -> datetime:
+        return self.posted_at or self.first_seen
 
 
-def rank_key(role: FitRole) -> tuple[int, int, float]:
+def rank_key(role: FitRole) -> tuple[int, float, int]:
     small = 0 if role.team_size is not None and role.team_size <= SMALL_TEAM else 1
-    return (small, -(role.comp_max or 0), -role.first_seen.timestamp())
+    return (small, -role.listed_at.timestamp(), -(role.comp_max or 0))
 
 
 def fit_roles(
     session: Session,
     *,
     days: int = 1,
+    max_age_days: int = MAX_POSTING_AGE_DAYS,
     now: datetime | None = None,
 ) -> list[FitRole]:
     moment = now or datetime.now(tz=UTC)
     since = moment - timedelta(days=days)
+    oldest = moment - timedelta(days=max_age_days)
     rows = session.execute(
         select(
             AtsJob.source,
@@ -317,6 +441,7 @@ def fit_roles(
             AtsJob.comp_max,
             AtsJob.comp_currency,
             AtsJob.first_seen,
+            AtsJob.posted_at,
             AtsJob.content_text,
             DiscoveredBoard.team_size,
         )
@@ -344,6 +469,10 @@ def fit_roles(
             and comp_fits(r.comp_max, r.comp_currency)
         ):
             continue
+        if not posting_fresh(r.posted_at, oldest):
+            continue
+        if language_blocks(r.content_text):
+            continue
         clearance = clearance_status(f"{r.title}\n{r.content_text}")
         if clearance == CLEARANCE_REQUIRED:
             continue
@@ -358,6 +487,7 @@ def fit_roles(
             team_size=r.team_size,
             first_seen=r.first_seen,
             clearance=clearance,
+            posted_at=r.posted_at,
         )
         key = (role.company_name.lower(), role.title.lower(), role.location)
         current = roles.get(key)
@@ -374,14 +504,23 @@ def _pay(role: FitRole) -> str:
     return f"${role.comp_min // 1000}k-${role.comp_max // 1000}k"
 
 
-def format_fit_list(roles: list[FitRole], days: int) -> str:
+def _age(role: FitRole, now: datetime) -> str:
+    days = max(0, (now - role.listed_at).days)
+    label = "posted" if role.posted_at is not None else "first seen"
+    return f"{label} today" if days == 0 else f"{label} {days}d ago"
+
+
+def format_fit_list(
+    roles: list[FitRole], days: int, now: datetime | None = None
+) -> str:
+    moment = now or datetime.now(tz=UTC)
     if not roles:
         return f"no new fitting roles in the last {days} day(s)"
     lines = [f"{len(roles)} new fitting roles in the last {days} day(s)", ""]
     for r in roles:
         size = f", {r.team_size} people" if r.team_size is not None else ""
         lines.append(
-            f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)})"
+            f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)}; {_age(r, moment)})"
         )
         tag = f" [clearance: {r.clearance}]" if r.clearance else ""
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
