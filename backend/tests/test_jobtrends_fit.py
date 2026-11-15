@@ -139,6 +139,33 @@ def test_format_fit_list() -> None:
             "Obtaining and maintaining all required security clearances is a condition of employment.",
             "sponsored",
         ),
+        ("TS/SCI with Poly required", "required"),
+        ("Clearance: Secret (active)", "required"),
+        ("Candidates must currently hold a Secret clearance", "required"),
+        ("Active Secret clearance required, Python preferred.", "required"),
+        (
+            "Ability to work independently, active Secret clearance required.",
+            "required",
+        ),
+        (
+            "No active security clearance is required. We sponsor your clearance.",
+            "sponsored",
+        ),
+        ("An active security clearance is not required.", None),
+        ("Security Clearance Requirement: None", None),
+        ("An active Secret clearance is desired.", "sponsored"),
+        ("Active Secret clearance is a bonus.", "sponsored"),
+        ("An active Secret clearance is nice-to-have.", "sponsored"),
+        (
+            "Must have an active Secret clearance or be eligible to obtain one.",
+            "sponsored",
+        ),
+        ("Office of Clearance and Settlement oversees markets.", None),
+        (
+            "An interim and/or final U.S. Secret Clearance Post-Start is required",
+            "sponsored",
+        ),
+        ("Active Federal Public Trust", "required"),
         ("Build agents in Python with Postgres.", None),
         ("Requires 5 years of Python. Security is important.", None),
     ],
@@ -150,3 +177,12 @@ def test_clearance_status(text: str, status: str | None) -> None:
 def test_format_tags_sponsored_clearance() -> None:
     text = format_fit_list([_role(clearance="sponsored")], 1)
     assert "[ats] [clearance: sponsored]" in text
+
+
+def test_clearance_status_is_fast_on_pathological_input() -> None:
+    import time
+
+    start = time.perf_counter()
+    for text in ("sponsor" * 3000, "obtain " * 3000, "clearance " * 3000, "a" * 60000):
+        clearance_status(text)
+    assert time.perf_counter() - start < 1.0

@@ -68,57 +68,66 @@ def location_fits(location: str | None) -> bool:
 CLEARANCE_REQUIRED = "required"
 CLEARANCE_SPONSORED = "sponsored"
 
-_CLEARANCE = r"(security clearances?|clearances?|ts/sci|top secret|secret|public trust)"
-_GAP = r"(?:[^.;\n]|\.(?=\S))"
-_CLEARANCE_HARD = (
-    re.compile(
-        r"\b(active|current|existing|must (?:hold|have|possess|maintain)|requires?|required)"
-        r"\b" + _GAP + r"{0,60}?\b" + _CLEARANCE + r"\b",
-        re.I,
-    ),
-    re.compile(
-        r"\b" + _CLEARANCE + r"\b" + _GAP + r"{0,30}?"
-        r"(must currently (?:possess|hold|have)|currently (?:possess|hold)|required to start)",
-        re.I,
-    ),
-)
-_SOFT_WORDS = r"(nice to have|nice-to-have|preferred|bonus|a plus|desired|ideally|abilit\w*|able to|eligib\w*|obtain\w*|willing\w*|acquire)"
-_CLEARANCE_SOFT_SPAN = re.compile(_SOFT_WORDS, re.I)
-_CLEARANCE_SOFT_BEFORE = re.compile(_SOFT_WORDS + _GAP + r"{0,80}$", re.I)
-_CLEARANCE_SOFT_AFTER = re.compile(
-    r"^\W{0,5}(?:requir\w*\W{0,5})?(abilit\w*|able to|eligib\w*)|^" + _GAP + r"{0,60}"
-    r"(or (?:the )?(?:ability|willingness|eligibility)|preferred|a plus|nice to have|willing)",
+_CLEARANCE_TERM = re.compile(
+    r"\b(security clearances?|clearances?|ts/sci|top secret|public trust"
+    r"|secret clearance|dod secret|dow secret)\b",
     re.I,
 )
-_CLEARANCE_OBTAINABLE = re.compile(
-    r"((obtain\w*|acquire|be granted|sponsor\w*)"
-    + _GAP
-    + r"{0,50}?\b"
-    + _CLEARANCE
-    + r"\b)"
-    r"|(\b" + _CLEARANCE + r"\b" + _GAP + r"{0,40}?sponsor\w*)",
+_CLAUSE = re.compile(r"[.;\n\u2022\u25cf\u25aa]|\s[-\u2013\u2014]\s|,(?!\s*or\b)")
+_NEGATION = re.compile(r"\b(no|not|none|without)\b|n't\b", re.I)
+_NEEDED = re.compile(
+    r"\b(required|requires?|requirement|needed|necessary)\b|\bnone\b", re.I
+)
+_OBTAINABLE = re.compile(
+    r"\b(obtain|obtaining|obtainable|acquire|be granted|sponsor|sponsors|sponsored|sponsorship"
+    r"|eligible to|eligibility to|eligible for|post-start|after start|upon hire|once hired"
+    r"|after hire)\b",
     re.I,
 )
+_STRICT = re.compile(
+    r"\b(required|requires|require|must|minimum|currently hold|currently possess)\b",
+    re.I,
+)
+_ACTIVE = re.compile(r"\b(active|current|existing)\b", re.I)
+_SOFT = re.compile(
+    r"nice[- ]to[- ]have|\b(preferred|desired|bonus|a plus|ideally|optional)\b", re.I
+)
+_WINDOW = 120
+_NEAR = 35
+
+
+def _clause_status(clause: str) -> str | None:
+    status: str | None = None
+    for m in _CLEARANCE_TERM.finditer(clause):
+        window = clause[max(0, m.start() - _WINDOW) : m.end() + _WINDOW]
+        near = clause[max(0, m.start() - _NEAR) : m.end() + _NEAR]
+        if _NEGATION.search(near) and _NEEDED.search(near):
+            if _OBTAINABLE.search(window):
+                status = status or CLEARANCE_SPONSORED
+            continue
+        if _OBTAINABLE.search(window):
+            status = status or CLEARANCE_SPONSORED
+            continue
+        strict = _STRICT.search(near)
+        if strict or _ACTIVE.search(near):
+            if _SOFT.search(window) and not strict:
+                status = status or CLEARANCE_SPONSORED
+                continue
+            return CLEARANCE_REQUIRED
+        if _SOFT.search(window):
+            status = status or CLEARANCE_SPONSORED
+    return status
 
 
 def clearance_status(text: str | None) -> str | None:
     body = re.sub(r"\bu\.s\.", "US", text or "", flags=re.I)
-    softened = False
-    for pattern in _CLEARANCE_HARD:
-        for m in pattern.finditer(body):
-            before = body[max(0, m.start() - 120) : m.start()]
-            after = body[m.end() : m.end() + 80]
-            if (
-                _CLEARANCE_SOFT_SPAN.search(m.group(0))
-                or _CLEARANCE_SOFT_BEFORE.search(before)
-                or _CLEARANCE_SOFT_AFTER.search(after)
-            ):
-                softened = True
-                continue
+    result: str | None = None
+    for clause in _CLAUSE.split(body):
+        status = _clause_status(clause)
+        if status == CLEARANCE_REQUIRED:
             return CLEARANCE_REQUIRED
-    if softened or _CLEARANCE_OBTAINABLE.search(body):
-        return CLEARANCE_SPONSORED
-    return None
+        result = result or status
+    return result
 
 
 def comp_fits(comp_max: int | None, currency: str | None) -> bool:
