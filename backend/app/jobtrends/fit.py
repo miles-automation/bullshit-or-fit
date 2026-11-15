@@ -100,7 +100,7 @@ _OBT_AFTER = re.compile(
     r"\s+to\s+(obtain|acquire|get)"
     r"|\W*(post-start|after start|once hired|after hire)\b"
     r"|[^.;]{0,20}?\bmay be (?:required|needed)\b"
-    r"|\s*,?\s*or\s+(?!(?:an?\s+)?(?:active|current|top secret|ts/sci|secret|dod|interim)\b)"
+    r"|\s*,?\s*or\s+(?!(?:an?\s+)?(?:active|current|top secret|ts/sci|secret|dod|interim|higher|above|greater|better)\b)"
     r"|[^.;]{0,30}?(?<!visa )\bsponsor\w*)",
     re.I,
 )

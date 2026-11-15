@@ -214,6 +214,8 @@ def test_format_fit_list() -> None:
             "sponsored",
         ),
         ("Active Secret or TS/SCI clearance required", "required"),
+        ("Active Secret clearance or higher required", "required"),
+        ("Active TS/SCI or Top Secret clearance", "required"),
         ("Active US Security Clearance (TS/SCI) required", "required"),
         (
             "Preferred Qualifications Experience with Python and distributed systems Active Secret clearance Required Qualifications Five years of software engineering experience",
