@@ -354,6 +354,26 @@ DITTO = (
         ),
         ("We use Rust and Kotlin internally.", True),
         ("C# and .NET backend. Some Java tooling around the edges.", False),
+        ("Our backend is Python. No prior experience with Go is required.", False),
+        ("No Rust experience necessary. We will teach you Rust.", False),
+        (
+            "Our backend is Python. You must integrate with Java services in production.",
+            False,
+        ),
+        ("Must have Python and Rust experience.", True),
+        (
+            "Python backend. Rust experience required, Kubernetes experience a plus.",
+            True,
+        ),
+        ("Go expertise required.", True),
+        (
+            "Service-oriented architectures in Go, Java, or a comparable backend language.",
+            False,
+        ),
+        (
+            "7+ years of software development, including production systems, with Go as a primary language",
+            True,
+        ),
         ("", False),
     ],
 )

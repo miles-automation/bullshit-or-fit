@@ -280,8 +280,8 @@ _OTHER_LANGUAGE = re.compile(
 _GO = re.compile(
     r"(?<=\bin )Go\b|(?<=\bwith )Go\b|(?<=\busing )Go\b|(?<=\bour )Go\b|(?<=\bof )Go\b"
     r"|(?<=, )Go\b|(?<=/)Go\b|(?<=\()Go\b"
-    r"|\bGo\b(?=\s*(?:,|/|\)|or\b|developer|engineer|experience|services?\b|code\b"
-    r"|programming|microservices))"
+    r"|\bGo\b(?=\s*(?:,|/|\)|or\b|developer|engineer|experience|expertise|skills?\b"
+    r"|proficiency|knowledge|development|services?\b|code\b|programming|microservices))"
 )
 _MY_LANGUAGE = re.compile(
     r"(?<![\w.])(python|typescript|javascript|node\.?js|react|swift|c#)(?!\w)"
@@ -289,13 +289,13 @@ _MY_LANGUAGE = re.compile(
     re.I,
 )
 _STRICT_CUE = re.compile(
-    r"\b(strong|deep|expert\w*|proficien\w*|fluen\w*|production|professional|required"
-    r"|requires?|must|years)\b",
+    r"\b(strong|deep|expert\w*|proficien\w*|fluen\w*|production\w*|professional|required"
+    r"|requires?|must|years|primary|minimum)\b",
     re.I,
 )
-_WEAK_CUE = re.compile(
-    r"\b(comfortable (?:building|writing|working)|experience (?:with|in|building|writing)"
-    r"|build\w*|writ\w*)\b",
+_ABILITY = re.compile(
+    r"\b(experience\w*|expertise|proficien\w*|fluen\w*|skills?|years|knowledge|background"
+    r"|programming|develop\w*|writ\w*|coding|build\w*|primary language|comfortable)\b",
     re.I,
 )
 _SOFT_CUE = re.compile(
@@ -303,7 +303,20 @@ _SOFT_CUE = re.compile(
     r"|not required|optional)\b",
     re.I,
 )
+_ALTERNATIVE = re.compile(r"\b(or|such as|one of|at least one|any of|either)\b", re.I)
+_ANY_LANGUAGE = re.compile(
+    r"\b(comparable|similar|equivalent|any modern|another)\b", re.I
+)
+_WAIVER = re.compile(
+    r"\b(no|not|without)\b[^,;.]{0,40}\b(experience|required|necessary|needed|expected)\b"
+    r"|\b(will|we'll|we will) teach\b|\bno prior\b",
+    re.I,
+)
+_INTEGRATION = re.compile(
+    r"\b(integrat\w*|interfac\w*|interoperat\w*|talk\w* to|consum\w*|migrat\w*)\b", re.I
+)
 _SENTENCE = re.compile(r"\.(?=\s|$)|[;\n\u2022]|\s-\s|\s\u2014\s")
+_COMMA = re.compile(r",(?!\s*or\b)")
 
 
 def _other_language_mentions(text: str) -> int:
@@ -315,16 +328,23 @@ def language_blocks(text: str | None) -> bool:
     mine = bool(_MY_LANGUAGE.search(body))
     mandatory = 0
     for sentence in _SENTENCE.split(body):
-        mentions = _other_language_mentions(sentence)
-        if not mentions:
+        if not _other_language_mentions(sentence):
             continue
-        if _MY_LANGUAGE.search(sentence) or _SOFT_CUE.search(sentence):
+        if _ANY_LANGUAGE.search(sentence):
             continue
-        if _STRICT_CUE.search(sentence):
-            return True
-        if not mine and _WEAK_CUE.search(sentence):
-            return True
-        mandatory += mentions
+        if _MY_LANGUAGE.search(sentence) and _ALTERNATIVE.search(sentence):
+            continue
+        for clause in _COMMA.split(sentence):
+            mentions = _other_language_mentions(clause)
+            if not mentions or _SOFT_CUE.search(clause) or _WAIVER.search(clause):
+                continue
+            if not _ABILITY.search(clause):
+                if not _INTEGRATION.search(clause):
+                    mandatory += mentions
+                continue
+            if _STRICT_CUE.search(clause) or not mine:
+                return True
+            mandatory += mentions
     return mandatory >= 2 and not mine
 
 
