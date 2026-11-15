@@ -204,6 +204,40 @@ def _cmd_migrate() -> int:
     return 0
 
 
+def _cmd_discover() -> int:
+    from app.jobtrends.ats import AtsClient
+    from app.jobtrends.discovery import BoardProber, discovery_tick
+
+    prober = BoardProber()
+    try:
+        with SessionLocal() as session:
+            summary = discovery_tick(session, prober, AtsClient())
+    finally:
+        prober.close()
+    print(  # noqa: T201
+        f"discovery: {summary['candidates']} candidates, probed {summary['probed']}, "
+        f"found {summary['found']}, {summary['boards']} boards snapshotted"
+    )
+    return 0
+
+
+def _cmd_himalayas_snapshot() -> int:
+    from app.jobtrends.himalayas import HimalayasClient, himalayas_snapshot
+
+    with SessionLocal() as session:
+        summary = himalayas_snapshot(session, HimalayasClient())
+    print(f"himalayas: {summary['fetched']} fetched, {summary['new']} new")  # noqa: T201
+    return 0
+
+
+def _cmd_fit(days: int) -> int:
+    from app.jobtrends.fit import fit_roles, format_fit_list
+
+    with SessionLocal() as session:
+        print(format_fit_list(fit_roles(session, days=days), days))  # noqa: T201
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     _setup_logging()
     parser = argparse.ArgumentParser(prog="jobtrends")
@@ -239,6 +273,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("oews-load", help="load BLS OEWS wage bands by state (via O*NET)")
     p_wages = sub.add_parser("wages", help="OEWS wage bands for a state (+ national)")
     p_wages.add_argument("area", help="2-letter state code, e.g. WY")
+
+    sub.add_parser("discover", help="find small-company boards (YC) and snapshot them")
+    sub.add_parser("himalayas-snapshot", help="snapshot Himalayas remote US roles")
+    p_fit = sub.add_parser("fit", help="new roles that fit Rich's search filters")
+    p_fit.add_argument("--days", type=int, default=1)
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -277,6 +316,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_wages(args.area)
     if args.cmd == "skills":
         return _cmd_skills()
+    if args.cmd == "discover":
+        return _cmd_discover()
+    if args.cmd == "himalayas-snapshot":
+        return _cmd_himalayas_snapshot()
+    if args.cmd == "fit":
+        return _cmd_fit(args.days)
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

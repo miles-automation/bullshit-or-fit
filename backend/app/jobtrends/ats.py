@@ -151,6 +151,7 @@ class ParsedJob:
     comp_currency: str | None = None
     comp_period: str | None = None
     comp_kind: str | None = None
+    expires_at: datetime | None = None
 
     @property
     def id(self) -> str:
@@ -433,6 +434,7 @@ def upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> No
             "comp_currency": j.comp_currency,
             "comp_period": j.comp_period,
             "comp_kind": j.comp_kind,
+            "expires_at": j.expires_at,
         }
         for j in jobs
     ]
@@ -455,6 +457,7 @@ def upsert_jobs(session: Session, jobs: list[ParsedJob], run_at: datetime) -> No
             "comp_currency": stmt.excluded.comp_currency,
             "comp_period": stmt.excluded.comp_period,
             "comp_kind": stmt.excluded.comp_kind,
+            "expires_at": stmt.excluded.expires_at,
         },
     )
     session.execute(stmt)

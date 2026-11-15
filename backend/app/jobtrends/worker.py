@@ -134,6 +134,29 @@ def _run_once(months: int) -> None:
         )
 
     try:
+        from app.jobtrends.ats import AtsClient
+        from app.jobtrends.discovery import BoardProber, discovery_tick
+
+        prober = BoardProber()
+        try:
+            with SessionLocal() as session:
+                discovery_tick(session, prober, AtsClient())
+        finally:
+            prober.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("jobtrends: board discovery failed; will retry next interval")
+
+    try:
+        from app.jobtrends.himalayas import HimalayasClient, himalayas_snapshot
+
+        with SessionLocal() as session:
+            himalayas_snapshot(session, HimalayasClient())
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "jobtrends: Himalayas snapshot failed; will retry next interval"
+        )
+
+    try:
         from app.jobtrends.sec.service import refresh_if_enabled
 
         refresh_if_enabled()
