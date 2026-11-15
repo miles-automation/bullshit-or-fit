@@ -4,6 +4,7 @@ import pytest
 
 from app.jobtrends.fit import (
     FitRole,
+    clearance_status,
     comp_fits,
     format_fit_list,
     location_fits,
@@ -97,3 +98,55 @@ def test_format_fit_list() -> None:
         "Acme, 12 people: Senior Software Engineer (Remote - US; $150k-$200k)" in text
     )
     assert format_fit_list([], 3) == "no new fitting roles in the last 3 day(s)"
+
+
+@pytest.mark.parametrize(
+    ("text", "status"),
+    [
+        ("Must hold an active TS/SCI clearance.", "required"),
+        ("Active Secret clearance required.", "required"),
+        ("This position requires a current Top Secret clearance", "required"),
+        ("Nice to Have: Active TS/SCI clearance", "sponsored"),
+        ("Current TS/SCI clearance, or willingness to acquire one", "sponsored"),
+        ("Active Secret clearance preferred.", "sponsored"),
+        ("Must be able to obtain a Secret clearance.", "sponsored"),
+        ("We sponsor security clearances for this role.", "sponsored"),
+        ("Ability to obtain and maintain a TS/SCI clearance.", "sponsored"),
+        ("Active U.S. Government TS/SCI clearance.", "required"),
+        ("Clearance Level Must Currently Possess: Secret", "required"),
+        ("Minimum Clearance Required to Start: Secret", "required"),
+        ("Active Top Secret Clearance (Interim TS will be considered)", "required"),
+        (
+            "This position requires the ability to obtain a US Security Clearance",
+            "sponsored",
+        ),
+        ("Clearance Required: Ability to Obtain Secret", "sponsored"),
+        (
+            "Travel Required: Up to 10% Clearance Required: Ability to Obtain Secret",
+            "sponsored",
+        ),
+        ("Eligibility to obtain and maintain a U.S. Security Clearance.", "sponsored"),
+        ("Ability to obtain an active U.S. Security Clearance", "sponsored"),
+        (
+            "Must have the ability to obtain / maintain a Public Trust clearance",
+            "sponsored",
+        ),
+        (
+            "Able to obtain any customer- or contract-required security clearance",
+            "sponsored",
+        ),
+        (
+            "Obtaining and maintaining all required security clearances is a condition of employment.",
+            "sponsored",
+        ),
+        ("Build agents in Python with Postgres.", None),
+        ("Requires 5 years of Python. Security is important.", None),
+    ],
+)
+def test_clearance_status(text: str, status: str | None) -> None:
+    assert clearance_status(text) == status
+
+
+def test_format_tags_sponsored_clearance() -> None:
+    text = format_fit_list([_role(clearance="sponsored")], 1)
+    assert "[ats] [clearance: sponsored]" in text

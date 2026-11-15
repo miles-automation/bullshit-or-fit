@@ -65,6 +65,62 @@ def location_fits(location: str | None) -> bool:
     return not re.sub(r"[^a-z]+", "", _REMOTE.sub("", text.lower()))
 
 
+CLEARANCE_REQUIRED = "required"
+CLEARANCE_SPONSORED = "sponsored"
+
+_CLEARANCE = r"(security clearances?|clearances?|ts/sci|top secret|secret|public trust)"
+_GAP = r"(?:[^.;\n]|\.(?=\S))"
+_CLEARANCE_HARD = (
+    re.compile(
+        r"\b(active|current|existing|must (?:hold|have|possess|maintain)|requires?|required)"
+        r"\b" + _GAP + r"{0,60}?\b" + _CLEARANCE + r"\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b" + _CLEARANCE + r"\b" + _GAP + r"{0,30}?"
+        r"(must currently (?:possess|hold|have)|currently (?:possess|hold)|required to start)",
+        re.I,
+    ),
+)
+_SOFT_WORDS = r"(nice to have|nice-to-have|preferred|bonus|a plus|desired|ideally|abilit\w*|able to|eligib\w*|obtain\w*|willing\w*|acquire)"
+_CLEARANCE_SOFT_SPAN = re.compile(_SOFT_WORDS, re.I)
+_CLEARANCE_SOFT_BEFORE = re.compile(_SOFT_WORDS + _GAP + r"{0,80}$", re.I)
+_CLEARANCE_SOFT_AFTER = re.compile(
+    r"^\W{0,5}(?:requir\w*\W{0,5})?(abilit\w*|able to|eligib\w*)|^" + _GAP + r"{0,60}"
+    r"(or (?:the )?(?:ability|willingness|eligibility)|preferred|a plus|nice to have|willing)",
+    re.I,
+)
+_CLEARANCE_OBTAINABLE = re.compile(
+    r"((obtain\w*|acquire|be granted|sponsor\w*)"
+    + _GAP
+    + r"{0,50}?\b"
+    + _CLEARANCE
+    + r"\b)"
+    r"|(\b" + _CLEARANCE + r"\b" + _GAP + r"{0,40}?sponsor\w*)",
+    re.I,
+)
+
+
+def clearance_status(text: str | None) -> str | None:
+    body = re.sub(r"\bu\.s\.", "US", text or "", flags=re.I)
+    softened = False
+    for pattern in _CLEARANCE_HARD:
+        for m in pattern.finditer(body):
+            before = body[max(0, m.start() - 120) : m.start()]
+            after = body[m.end() : m.end() + 80]
+            if (
+                _CLEARANCE_SOFT_SPAN.search(m.group(0))
+                or _CLEARANCE_SOFT_BEFORE.search(before)
+                or _CLEARANCE_SOFT_AFTER.search(after)
+            ):
+                softened = True
+                continue
+            return CLEARANCE_REQUIRED
+    if softened or _CLEARANCE_OBTAINABLE.search(body):
+        return CLEARANCE_SPONSORED
+    return None
+
+
 def comp_fits(comp_max: int | None, currency: str | None) -> bool:
     if comp_max is None:
         return True
@@ -84,6 +140,7 @@ class FitRole:
     comp_max: int | None
     team_size: int | None
     first_seen: datetime
+    clearance: str | None = None
 
 
 def rank_key(role: FitRole) -> tuple[int, int, float]:
@@ -110,6 +167,7 @@ def fit_roles(
             AtsJob.comp_max,
             AtsJob.comp_currency,
             AtsJob.first_seen,
+            AtsJob.content_text,
             DiscoveredBoard.team_size,
         )
         .outerjoin(
@@ -136,6 +194,9 @@ def fit_roles(
             and comp_fits(r.comp_max, r.comp_currency)
         ):
             continue
+        clearance = clearance_status(f"{r.title}\n{r.content_text}")
+        if clearance == CLEARANCE_REQUIRED:
+            continue
         role = FitRole(
             source=r.source,
             company_name=r.company_name,
@@ -146,6 +207,7 @@ def fit_roles(
             comp_max=r.comp_max,
             team_size=r.team_size,
             first_seen=r.first_seen,
+            clearance=clearance,
         )
         key = (role.company_name.lower(), role.title.lower(), role.location)
         current = roles.get(key)
@@ -171,5 +233,6 @@ def format_fit_list(roles: list[FitRole], days: int) -> str:
         lines.append(
             f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)})"
         )
-        lines.append(f"  {r.url or 'no link'}  [{r.source}]")
+        tag = f" [clearance: {r.clearance}]" if r.clearance else ""
+        lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
     return "\n".join(lines)
