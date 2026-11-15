@@ -13,6 +13,7 @@ from app.jobtrends.models import AtsJob, DiscoveredBoard
 
 FIT_SOURCES = (SOURCE_ATS, SOURCE_REMOTE, SOURCE_HIMALAYAS, "commute_shed", "adzuna")
 MIN_COMP_MAX = 150_000
+MAX_POSTING_AGE_DAYS = 30
 SMALL_TEAM = 100
 
 _ROLE = re.compile(r"\b(engineer|engineering|developer|architect)\b", re.I)
@@ -271,6 +272,50 @@ def clearance_status(text: str | None) -> str | None:
     return result
 
 
+_OTHER_LANGUAGE = re.compile(
+    r"\b(rust|golang|java(?!script)|kotlin|scala|haskell|elixir|clojure|ocaml|erlang|php)\b"
+    r"|c\+\+",
+    re.I,
+)
+_GO = re.compile(
+    r"(?<=\bin )Go\b|(?<=\bwith )Go\b|(?<=\busing )Go\b|(?<=\bour )Go\b"
+    r"|(?<=, )Go\b|(?<=/)Go\b|(?<=\()Go\b"
+    r"|\bGo\b(?=\s*(?:,|/|\)|or\b|and\b|developer|engineer|services?\b|code\b|programming|microservices))"
+)
+_MY_LANGUAGE = re.compile(
+    r"\b(python|typescript|javascript|node\.?js|react|swift|\.net|c#)(?![\w])", re.I
+)
+_HARD_CUE = re.compile(
+    r"\b(strong|deep|expert\w*|proficien\w*|fluen\w*|production|professional|required|must"
+    r"|comfortable (?:building|writing|working)|experience (?:with|in|building|writing)|years|build\w*|writ\w*)\b",
+    re.I,
+)
+_SOFT_CUE = re.compile(
+    r"\b(nice to have|nice-to-have|bonus|a plus|plus|preferred|ideally|familiarity|exposure|not required)\b",
+    re.I,
+)
+_SENTENCE = re.compile(r"[.;\n\u2022]|\s-\s|\s\u2014\s")
+
+
+def _other_language_mentions(text: str) -> int:
+    return len(_OTHER_LANGUAGE.findall(text)) + len(_GO.findall(text))
+
+
+def language_blocks(text: str | None) -> bool:
+    body = text or ""
+    mine = bool(_MY_LANGUAGE.search(body))
+    if _other_language_mentions(body) >= 2 and not mine:
+        return True
+    for sentence in _SENTENCE.split(body):
+        if not _other_language_mentions(sentence):
+            continue
+        if _MY_LANGUAGE.search(sentence) or _SOFT_CUE.search(sentence):
+            continue
+        if _HARD_CUE.search(sentence) and not mine:
+            return True
+    return False
+
+
 def comp_fits(comp_max: int | None, currency: str | None) -> bool:
     if comp_max is None:
         return True
@@ -291,21 +336,28 @@ class FitRole:
     team_size: int | None
     first_seen: datetime
     clearance: str | None = None
+    posted_at: datetime | None = None
+
+    @property
+    def listed_at(self) -> datetime:
+        return self.posted_at or self.first_seen
 
 
-def rank_key(role: FitRole) -> tuple[int, int, float]:
+def rank_key(role: FitRole) -> tuple[int, float, int]:
     small = 0 if role.team_size is not None and role.team_size <= SMALL_TEAM else 1
-    return (small, -(role.comp_max or 0), -role.first_seen.timestamp())
+    return (small, -role.listed_at.timestamp(), -(role.comp_max or 0))
 
 
 def fit_roles(
     session: Session,
     *,
     days: int = 1,
+    max_age_days: int = MAX_POSTING_AGE_DAYS,
     now: datetime | None = None,
 ) -> list[FitRole]:
     moment = now or datetime.now(tz=UTC)
     since = moment - timedelta(days=days)
+    oldest = moment - timedelta(days=max_age_days)
     rows = session.execute(
         select(
             AtsJob.source,
@@ -317,6 +369,7 @@ def fit_roles(
             AtsJob.comp_max,
             AtsJob.comp_currency,
             AtsJob.first_seen,
+            AtsJob.posted_at,
             AtsJob.content_text,
             DiscoveredBoard.team_size,
         )
@@ -344,6 +397,10 @@ def fit_roles(
             and comp_fits(r.comp_max, r.comp_currency)
         ):
             continue
+        if r.posted_at is not None and r.posted_at < oldest:
+            continue
+        if language_blocks(r.content_text):
+            continue
         clearance = clearance_status(f"{r.title}\n{r.content_text}")
         if clearance == CLEARANCE_REQUIRED:
             continue
@@ -358,6 +415,7 @@ def fit_roles(
             team_size=r.team_size,
             first_seen=r.first_seen,
             clearance=clearance,
+            posted_at=r.posted_at,
         )
         key = (role.company_name.lower(), role.title.lower(), role.location)
         current = roles.get(key)
@@ -374,14 +432,23 @@ def _pay(role: FitRole) -> str:
     return f"${role.comp_min // 1000}k-${role.comp_max // 1000}k"
 
 
-def format_fit_list(roles: list[FitRole], days: int) -> str:
+def _age(role: FitRole, now: datetime) -> str:
+    days = max(0, (now - role.listed_at).days)
+    label = "posted" if role.posted_at is not None else "first seen"
+    return f"{label} today" if days == 0 else f"{label} {days}d ago"
+
+
+def format_fit_list(
+    roles: list[FitRole], days: int, now: datetime | None = None
+) -> str:
+    moment = now or datetime.now(tz=UTC)
     if not roles:
         return f"no new fitting roles in the last {days} day(s)"
     lines = [f"{len(roles)} new fitting roles in the last {days} day(s)", ""]
     for r in roles:
         size = f", {r.team_size} people" if r.team_size is not None else ""
         lines.append(
-            f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)})"
+            f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)}; {_age(r, moment)})"
         )
         tag = f" [clearance: {r.clearance}]" if r.clearance else ""
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
