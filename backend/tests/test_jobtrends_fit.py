@@ -215,6 +215,11 @@ def test_format_fit_list() -> None:
         ),
         ("Active Secret or TS/SCI clearance required", "required"),
         ("Active Secret clearance or higher required", "required"),
+        ("Must have an active Secret clearance or equivalent.", "required"),
+        ("Must possess an active Secret clearance or TS.", "required"),
+        ("Nice to Have\nActive Secret clearance", "sponsored"),
+        ("Nice-to-Haves\nActive TS/SCI clearance", "sponsored"),
+        ("Nice to Have\nPython\nRequired:\nActive Secret clearance", "required"),
         ("Active TS/SCI or Top Secret clearance", "required"),
         ("Active US Security Clearance (TS/SCI) required", "required"),
         (

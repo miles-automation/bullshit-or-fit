@@ -100,8 +100,12 @@ _OBT_AFTER = re.compile(
     r"\s+to\s+(obtain|acquire|get)"
     r"|\W*(post-start|after start|once hired|after hire)\b"
     r"|[^.;]{0,20}?\bmay be (?:required|needed)\b"
-    r"|\s*,?\s*or\s+(?!(?:an?\s+)?(?:active|current|top secret|ts/sci|secret|dod|interim|higher|above|greater|better)\b)"
     r"|[^.;]{0,30}?(?<!visa )\bsponsor\w*)",
+    re.I,
+)
+_OR_ALTERNATIVE = re.compile(
+    r"^\s*,?\s*or\s+(?!(?:an?\s+)?(?:active|current|top secret|ts/sci|ts\b|secret|dod|interim"
+    r"|higher|above|greater|better|equivalent|comparable|similar)\b)",
     re.I,
 )
 _STRICT_BEFORE = re.compile(
@@ -172,6 +176,13 @@ def _clause_status(clause: str) -> str | None:
             status = status or CLEARANCE_SPONSORED
             continue
         if (
+            _OR_ALTERNATIVE.search(after)
+            and not _STRICT_BEFORE.search(before)
+            and not _STRICT_AFTER.search(after)
+        ):
+            status = status or CLEARANCE_SPONSORED
+            continue
+        if (
             _SOFT_AFTER.search(after)
             or _SOFT_LABEL_BEFORE.search(before)
             or _SOFT_BEFORE.search(before)
@@ -201,6 +212,10 @@ _HARD_HEADING = re.compile(
     r"|requirements\s*:|what you(?:'ll| will) need|must[- ]haves?|who you are|what you bring)",
     re.I,
 )
+_SOFT_LINE = re.compile(
+    r"^\s*(nice[- ]to[- ]haves?|preferred|bonus|pluses|desired)(?:\s+for\s+this\s+role)?\s*:?\s*$",
+    re.I | re.M,
+)
 _REQUIRED_LINE = re.compile(r"^\s*required\s*:", re.I | re.M)
 _HEADING = re.compile(_SOFT_HEADING.pattern + "|" + _HARD_HEADING.pattern, re.I)
 _EXPLICIT_REQUIRED = re.compile(
@@ -222,6 +237,7 @@ def _soft_scope_marks(body: str) -> list[tuple[int, bool]]:
     marks = [(m.end(), True) for m in _SOFT_HEADING.finditer(body)]
     marks += [(m.end(), False) for m in _HARD_HEADING.finditer(body)]
     marks += [(m.end(), False) for m in _REQUIRED_LINE.finditer(body)]
+    marks += [(m.end(), True) for m in _SOFT_LINE.finditer(body)]
     return sorted(marks)
 
 
