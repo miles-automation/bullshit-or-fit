@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.jobtrends.ats import SOURCE_ATS, SOURCE_REMOTE
@@ -29,13 +29,19 @@ _EXCLUDED_LANGUAGE = re.compile(
 )
 _COMMUTE = re.compile(r"\b(fort collins|cheyenne|laramie|loveland|windsor, co)\b", re.I)
 _REMOTE = re.compile(r"\b(remote|anywhere|distributed|work from home|wfh)\b", re.I)
-_US = re.compile(
-    r"\b(us|usa|u\.s\.|united states|americas|north america|worldwide)\b", re.I
+_US_STATES = (
+    r"alabama|alaska|arizona|arkansas|california|colorado|connecticut|"
+    r"delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|"
+    r"kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|"
+    r"mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|"
+    r"new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|"
+    r"pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|"
+    r"utah|vermont|virginia|washington|west virginia|wisconsin|wyoming"
 )
-_NON_US = re.compile(
-    r"\b(canada|uk|united kingdom|europe|emea|germany|india|london|toronto|apac|poland"
-    r"|spain|france|brazil|latam|mexico|ireland|amsterdam|netherlands|australia"
-    r"|singapore|japan|israel|philippines|argentina|colombia|portugal)\b",
+_US = re.compile(
+    r"\bu\.s\.|\b(us|usa|united states|americas|north america|worldwide|"
+    + _US_STATES
+    + r")\b",
     re.I,
 )
 
@@ -54,7 +60,9 @@ def location_fits(location: str | None) -> bool:
         return True
     if not _REMOTE.search(text):
         return False
-    return bool(_US.search(text)) or not _NON_US.search(text)
+    if _US.search(text):
+        return True
+    return not re.sub(r"[^a-z]+", "", _REMOTE.sub("", text.lower()))
 
 
 def comp_fits(comp_max: int | None, currency: str | None) -> bool:
@@ -89,7 +97,8 @@ def fit_roles(
     days: int = 1,
     now: datetime | None = None,
 ) -> list[FitRole]:
-    since = (now or datetime.now(tz=UTC)) - timedelta(days=days)
+    moment = now or datetime.now(tz=UTC)
+    since = moment - timedelta(days=days)
     rows = session.execute(
         select(
             AtsJob.source,
@@ -116,6 +125,7 @@ def fit_roles(
             AtsJob.is_open.is_(True),
             AtsJob.first_seen >= since,
             AtsJob.source.in_(FIT_SOURCES),
+            or_(AtsJob.expires_at.is_(None), AtsJob.expires_at > moment),
         )
     ).all()
     roles: dict[tuple[str, str, str | None], FitRole] = {}

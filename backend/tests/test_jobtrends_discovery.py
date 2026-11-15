@@ -1,15 +1,18 @@
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 
 from app.jobtrends.ats import PROVIDER_ASHBY, PROVIDER_GREENHOUSE, PROVIDER_LEVER
 from app.jobtrends.discovery import (
     BoardHit,
     BoardProber,
     Candidate,
-    board_open_roles,
+    ProbeResult,
+    board_jobs,
     candidate_tokens,
     due_candidates,
+    owns_board,
     parse_yc_hiring,
 )
 
@@ -72,11 +75,19 @@ def test_candidate_tokens_dedupes_variants() -> None:
     assert candidate_tokens(Candidate("linear", "Linear", 3, None)) == ["linear"]
 
 
-def test_board_open_roles_by_provider() -> None:
-    assert board_open_roles(PROVIDER_LEVER, [{}, {}]) == 2
-    assert board_open_roles(PROVIDER_LEVER, {"ok": False}) is None
-    assert board_open_roles(PROVIDER_ASHBY, {"jobs": [{}]}) == 1
-    assert board_open_roles(PROVIDER_GREENHOUSE, {"error": "x"}) is None
+def test_board_jobs_by_provider() -> None:
+    assert board_jobs(PROVIDER_LEVER, [{}, {}]) == [{}, {}]
+    assert board_jobs(PROVIDER_LEVER, {"ok": False}) is None
+    assert board_jobs(PROVIDER_ASHBY, {"jobs": [{}]}) == [{}]
+    assert board_jobs(PROVIDER_GREENHOUSE, {"error": "x"}) is None
+
+
+def test_owns_board_needs_name_or_domain_in_jobs() -> None:
+    acme = Candidate("acme-ai", "Acme AI", 9, "https://www.acme.ai/")
+    assert owns_board(acme, [{"descriptionPlain": "At Acme AI we build agents."}])
+    assert owns_board(acme, [{"applyUrl": "https://careers.acme.ai/apply"}])
+    assert not owns_board(acme, [{"descriptionPlain": "At Acmeco we sell shoes."}])
+    assert not owns_board(acme, [])
 
 
 def test_due_candidates_orders_never_probed_then_oldest() -> None:
@@ -91,44 +102,209 @@ def test_due_candidates_orders_never_probed_then_oldest() -> None:
     assert due_candidates([d, c, b, a], probed, now, limit=2) == [a, b]
 
 
-def _prober(handler) -> BoardProber:  # noqa: ANN001
-    return BoardProber(transport=httpx.MockTransport(handler), sleep=lambda _s: None)
+def _prober(handler, **kw) -> BoardProber:  # noqa: ANN001, ANN003
+    return BoardProber(
+        transport=httpx.MockTransport(handler), sleep=lambda _s: None, **kw
+    )
 
 
-def test_probe_finds_lever_board_on_name_token() -> None:
+ACME = Candidate("acme-ai", "Acme AI", 9, None)
+ACME_JOB = {"id": "1", "descriptionPlain": "Join Acme AI."}
+
+
+def test_probe_finds_owned_lever_board_on_name_token() -> None:
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
         if request.url.host == "api.lever.co" and "acmeai" in request.url.path:
-            return httpx.Response(200, json=[{"id": "1"}, {"id": "2"}])
+            return httpx.Response(200, json=[ACME_JOB, ACME_JOB])
         return httpx.Response(404, json={"error": "nope"})
 
-    hit = _prober(handler).probe(Candidate("acme-ai", "Acme AI", 9, None))
-    assert hit == BoardHit(PROVIDER_LEVER, "acmeai", 2)
+    result = _prober(handler).probe(ACME)
+    assert result == ProbeResult(BoardHit(PROVIDER_LEVER, "acmeai", 2), True)
     assert seen[0].startswith("https://api.ashbyhq.com/posting-api/job-board/acme-ai")
 
 
-def test_probe_ignores_errors_and_bad_json() -> None:
+def test_probe_all_404_is_conclusive_miss() -> None:
+    result = _prober(lambda _r: httpx.Response(404)).probe(ACME)
+    assert result == ProbeResult(None, True)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        lambda: httpx.Response(429),
+        lambda: httpx.Response(503),
+        lambda: httpx.Response(200, text="not json"),
+        lambda: httpx.Response(200, json={"error": "x"}),
+    ],
+)
+def test_probe_errors_are_inconclusive(failure) -> None:  # noqa: ANN001
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "api.ashbyhq.com":
-            raise httpx.ConnectError("down")
         if request.url.host == "boards-api.greenhouse.io":
-            return httpx.Response(200, text="not json")
+            return failure()
         return httpx.Response(404)
 
-    assert _prober(handler).probe(Candidate("x", "X", 2, None)) is None
+    assert _prober(handler).probe(ACME) == ProbeResult(None, False)
 
 
-def test_probe_accepts_empty_ashby_board() -> None:
+def test_probe_connection_error_is_inconclusive() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    assert _prober(handler).probe(ACME) == ProbeResult(None, False)
+
+
+def test_probe_rejects_unrelated_board_and_keeps_looking() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.ashbyhq.com":
-            return httpx.Response(200, json={"jobs": []})
+            return httpx.Response(
+                200, json={"jobs": [{"descriptionPlain": "Other Co"}]}
+            )
+        if request.url.host == "boards-api.greenhouse.io":
+            return httpx.Response(200, json={"jobs": [{"content": "We are Acme AI"}]})
         return httpx.Response(404)
 
-    assert _prober(handler).probe(Candidate("x", "X", 2, None)) == BoardHit(
-        PROVIDER_ASHBY, "x", 0
+    result = _prober(handler).probe(ACME)
+    assert result.hit == BoardHit(PROVIDER_GREENHOUSE, "acme-ai", 1)
+
+
+def test_probe_stops_at_request_budget() -> None:
+    prober = _prober(lambda _r: httpx.Response(404), max_requests=2)
+    assert prober.probe(ACME) == ProbeResult(None, False)
+    assert prober.requests == 2
+    assert prober.exhausted
+
+
+def test_probe_stops_at_deadline() -> None:
+    ticks = iter([0.0, 100.0])
+    prober = _prober(
+        lambda _r: httpx.Response(404),
+        max_seconds=50,
+        clock=lambda: next(ticks, 100.0),
     )
+    assert prober.probe(ACME) == ProbeResult(None, False)
+    assert prober.requests == 0
+
+
+class _Row:
+    def __init__(
+        self, slug: str, provider: str | None, token: str | None, found: bool
+    ) -> None:
+        self.company_slug = slug
+        self.company_name = slug.title()
+        self.team_size = 5
+        self.website = None
+        self.provider = provider
+        self.token = token
+        self.found = found
+        self.probed_at = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+class _Session:
+    def __init__(self, rows: list[_Row]) -> None:
+        self._rows = rows
+        self.upserts = 0
+
+    def scalars(self, _stmt):  # noqa: ANN001, ANN202
+        return iter(self._rows)
+
+    def execute(self, _stmt) -> None:  # noqa: ANN001
+        self.upserts += 1
+
+    def commit(self) -> None:
+        pass
+
+
+class _ScriptedProber:
+    def __init__(self, results: dict[str, ProbeResult]) -> None:
+        self._results = results
+        self.probed: list[str] = []
+        self.exhausted = False
+
+    def probe(self, candidate: Candidate) -> ProbeResult:
+        self.probed.append(candidate.slug)
+        return self._results[candidate.slug]
+
+
+def _discover(monkeypatch, rows, results, candidates):  # noqa: ANN001, ANN202
+    from app.jobtrends import discovery
+
+    closed: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        discovery,
+        "close_missing",
+        lambda _s, _t, *, provider, company_token, source: closed.append(
+            (provider, company_token)
+        ),
+    )
+    session = _Session(rows)
+    prober = _ScriptedProber(results)
+    out = discovery.discover_boards(
+        session,  # type: ignore[arg-type]
+        prober,  # type: ignore[arg-type]
+        candidates,
+        now=datetime(2026, 11, 15, tzinfo=UTC),
+    )
+    return out, closed, prober, session
+
+
+def test_inconclusive_probe_keeps_mapping_and_closes_nothing(monkeypatch) -> None:  # noqa: ANN001
+    rows = [_Row("acme", PROVIDER_LEVER, "acme", True)]
+    out, closed, _p, session = _discover(
+        monkeypatch,
+        rows,
+        {"acme": ProbeResult(None, False)},
+        [Candidate("acme", "Acme", 5, None)],
+    )
+    assert closed == []
+    assert session.upserts == 0
+    assert out["inconclusive"] == 1
+
+
+def test_conclusive_miss_closes_old_board(monkeypatch) -> None:  # noqa: ANN001
+    rows = [_Row("acme", PROVIDER_LEVER, "acme", True)]
+    out, closed, _p, _s = _discover(
+        monkeypatch,
+        rows,
+        {"acme": ProbeResult(None, True)},
+        [Candidate("acme", "Acme", 5, None)],
+    )
+    assert closed == [(PROVIDER_LEVER, "acme")]
+    assert out["lost"] == 1
+
+
+def test_board_replacement_closes_previous_board(monkeypatch) -> None:  # noqa: ANN001
+    rows = [_Row("acme", PROVIDER_LEVER, "acme", True)]
+    hit = ProbeResult(BoardHit(PROVIDER_ASHBY, "acme", 3), True)
+    _o, closed, _p, _s = _discover(
+        monkeypatch, rows, {"acme": hit}, [Candidate("acme", "Acme", 5, None)]
+    )
+    assert closed == [(PROVIDER_LEVER, "acme")]
+
+
+def test_seeded_board_is_never_closed(monkeypatch) -> None:  # noqa: ANN001
+    rows = [_Row("openai", PROVIDER_ASHBY, "openai", True)]
+    _o, closed, _p, _s = _discover(
+        monkeypatch,
+        rows,
+        {"openai": ProbeResult(None, True)},
+        [Candidate("openai", "OpenAI", 5, None)],
+    )
+    assert closed == []
+
+
+def test_found_boards_off_the_yc_list_are_still_reprobed(monkeypatch) -> None:  # noqa: ANN001
+    rows = [
+        _Row("gone", PROVIDER_LEVER, "gone", True),
+        _Row("never", None, None, False),
+    ]
+    _o, closed, prober, _s = _discover(
+        monkeypatch, rows, {"gone": ProbeResult(None, True)}, []
+    )
+    assert prober.probed == ["gone"]
+    assert closed == [(PROVIDER_LEVER, "gone")]
 
 
 def test_discovery_tick_snapshots_known_boards_when_yc_fetch_fails(monkeypatch) -> None:  # noqa: ANN001

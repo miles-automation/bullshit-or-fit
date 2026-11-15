@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from app.jobtrends import himalayas
 from app.jobtrends.himalayas import (
     PROVIDER_HIMALAYAS,
     SOURCE_HIMALAYAS,
@@ -90,3 +91,34 @@ def test_client_sends_us_senior_recent_search() -> None:
     assert params["sort"] == "recent"
     assert params["page"] == "2"
     assert params["q"] == "software engineer"
+
+
+def test_parse_himalayas_keeps_one_sided_pay() -> None:
+    [j] = parse_himalayas({"jobs": [{**JOB, "minSalary": None, "maxSalary": 120000}]})
+    assert (j.comp_min, j.comp_max) == (120000, 120000)
+    [k] = parse_himalayas({"jobs": [{**JOB, "minSalary": "160000", "maxSalary": ""}]})
+    assert (k.comp_min, k.comp_max) == (160000, 160000)
+
+
+def test_snapshot_still_closes_expired_when_search_fails(monkeypatch) -> None:  # noqa: ANN001
+    closed: list[datetime] = []
+    monkeypatch.setattr(
+        himalayas, "close_expired", lambda _s, run_at: closed.append(run_at)
+    )
+
+    class _Session:
+        def rollback(self) -> None:
+            pass
+
+        def commit(self) -> None:
+            pass
+
+    class _Failing:
+        def search(self, _q: str, _p: int) -> list[object]:
+            raise httpx.ConnectError("down")
+
+    try:
+        himalayas.himalayas_snapshot(_Session(), _Failing())  # type: ignore[arg-type]
+    except httpx.ConnectError:
+        pass
+    assert len(closed) == 1

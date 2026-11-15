@@ -59,9 +59,13 @@ def _comp(job: dict[str, Any]) -> dict[str, Any] | None:
     mult = _PERIOD_MULT.get(str(job.get("salaryPeriod") or "annual").strip().lower())
     if mult is None:
         return None
+    low_raw = job.get("minSalary")
+    high_raw = job.get("maxSalary")
+    if low_raw in (None, "") and high_raw in (None, ""):
+        return None
     try:
-        lo = float(str(job.get("minSalary"))) * mult
-        hi = float(str(job.get("maxSalary") or job.get("minSalary"))) * mult
+        lo = float(str(low_raw if low_raw not in (None, "") else high_raw)) * mult
+        hi = float(str(high_raw if high_raw not in (None, "") else low_raw)) * mult
     except (TypeError, ValueError):
         return None
     annual = annualize_structured(lo, hi, "per year")
@@ -193,21 +197,24 @@ def himalayas_snapshot(
     run_at = datetime.now(tz=UTC)
     fetched = 0
     new = 0
-    for query in queries:
-        for page in range(1, max_pages + 1):
-            jobs = client.search(query, page)
-            if not jobs:
-                break
-            unique = list({j.id: j for j in jobs}.values())
-            known = _known_ids(session, [j.id for j in unique], run_at)
-            upsert_jobs(session, unique, run_at)
-            session.commit()
-            fetched += len(unique)
-            fresh = [j for j in unique if j.id not in known]
-            new += len(fresh)
-            if not fresh:
-                break
-    close_expired(session, run_at)
-    session.commit()
+    try:
+        for query in queries:
+            for page in range(1, max_pages + 1):
+                jobs = client.search(query, page)
+                if not jobs:
+                    break
+                unique = list({j.id: j for j in jobs}.values())
+                known = _known_ids(session, [j.id for j in unique], run_at)
+                upsert_jobs(session, unique, run_at)
+                session.commit()
+                fetched += len(unique)
+                fresh = [j for j in unique if j.id not in known]
+                new += len(fresh)
+                if not fresh:
+                    break
+    finally:
+        session.rollback()
+        close_expired(session, run_at)
+        session.commit()
     logger.info("jobtrends: Himalayas — %s fetched, %s new", fetched, new)
     return {"fetched": fetched, "new": new}
