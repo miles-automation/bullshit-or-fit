@@ -5,6 +5,7 @@ import pytest
 from app.jobtrends.fit import (
     FitRole,
     language_blocks,
+    posting_fresh,
     clearance_status,
     comp_fits,
     format_fit_list,
@@ -334,8 +335,35 @@ DITTO = (
         ("Let's go build the future together. Go above and beyond.", False),
         ("We write JavaScript and TypeScript everywhere.", False),
         ("Strong C++ skills required for the trading engine.", True),
+        ("Nice to have: Rust. Bonus: Java.", False),
+        (
+            "Strong backend skills in at least one production language, such as Go, Rust, Node.js or Python.",
+            False,
+        ),
+        ("Working proficiency in Java or Node.js.", False),
+        (
+            "We build .NET services. We integrate with Java services and Java clients.",
+            False,
+        ),
+        ("Go and build the future with us.", False),
+        ("Go experience is required.", True),
+        ("3+ years of Go experience required.", True),
+        (
+            "Our frontend is TypeScript. You must have 5 years of production Rust experience.",
+            True,
+        ),
+        ("We use Rust and Kotlin internally.", True),
+        ("C# and .NET backend. Some Java tooling around the edges.", False),
         ("", False),
     ],
 )
 def test_language_blocks(text: str, blocked: bool) -> None:
     assert language_blocks(text) is blocked
+
+
+def test_posting_fresh_boundaries() -> None:
+    oldest = datetime(2026, 10, 16, tzinfo=UTC)
+    assert posting_fresh(None, oldest)
+    assert posting_fresh(oldest, oldest)
+    assert posting_fresh(oldest + timedelta(seconds=1), oldest)
+    assert not posting_fresh(oldest - timedelta(seconds=1), oldest)

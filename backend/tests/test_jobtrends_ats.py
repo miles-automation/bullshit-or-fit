@@ -34,7 +34,7 @@ GH_PAYLOAD = {
             "departments": [{"name": "Engineering"}, {"name": "Platform"}],
             "absolute_url": "https://boards.greenhouse.io/acme/jobs/123",
             "content": "<p>Build things with &amp; Python.</p>",
-            "updated_at": "2026-07-01T09:00:00-04:00",
+            "first_published": "2026-07-01T09:00:00-04:00",
         },
         {
             "id": 456,
@@ -292,3 +292,25 @@ def test_format_ats_table() -> None:
 
 def test_format_ats_table_empty() -> None:
     assert "no data" in format_ats_table(AtsReport(0, 0, []))
+
+
+def test_greenhouse_posted_at_uses_first_published_only() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "A",
+                "first_published": "2025-10-29T14:30:20-04:00",
+                "updated_at": "2026-11-15T12:00:00Z",
+            },
+            {
+                "id": 2,
+                "title": "B",
+                "first_published": None,
+                "updated_at": "2026-11-15T12:00:00Z",
+            },
+        ]
+    }
+    a, b = parse_greenhouse(ACME, payload)
+    assert a.posted_at == datetime.fromisoformat("2025-10-29T14:30:20-04:00")
+    assert b.posted_at is None

@@ -278,23 +278,32 @@ _OTHER_LANGUAGE = re.compile(
     re.I,
 )
 _GO = re.compile(
-    r"(?<=\bin )Go\b|(?<=\bwith )Go\b|(?<=\busing )Go\b|(?<=\bour )Go\b"
+    r"(?<=\bin )Go\b|(?<=\bwith )Go\b|(?<=\busing )Go\b|(?<=\bour )Go\b|(?<=\bof )Go\b"
     r"|(?<=, )Go\b|(?<=/)Go\b|(?<=\()Go\b"
-    r"|\bGo\b(?=\s*(?:,|/|\)|or\b|and\b|developer|engineer|services?\b|code\b|programming|microservices))"
+    r"|\bGo\b(?=\s*(?:,|/|\)|or\b|developer|engineer|experience|services?\b|code\b"
+    r"|programming|microservices))"
 )
 _MY_LANGUAGE = re.compile(
-    r"\b(python|typescript|javascript|node\.?js|react|swift|\.net|c#)(?![\w])", re.I
+    r"(?<![\w.])(python|typescript|javascript|node\.?js|react|swift|c#)(?!\w)"
+    r"|(?<!\w)\.net\b",
+    re.I,
 )
-_HARD_CUE = re.compile(
-    r"\b(strong|deep|expert\w*|proficien\w*|fluen\w*|production|professional|required|must"
-    r"|comfortable (?:building|writing|working)|experience (?:with|in|building|writing)|years|build\w*|writ\w*)\b",
+_STRICT_CUE = re.compile(
+    r"\b(strong|deep|expert\w*|proficien\w*|fluen\w*|production|professional|required"
+    r"|requires?|must|years)\b",
+    re.I,
+)
+_WEAK_CUE = re.compile(
+    r"\b(comfortable (?:building|writing|working)|experience (?:with|in|building|writing)"
+    r"|build\w*|writ\w*)\b",
     re.I,
 )
 _SOFT_CUE = re.compile(
-    r"\b(nice to have|nice-to-have|bonus|a plus|plus|preferred|ideally|familiarity|exposure|not required)\b",
+    r"\b(nice to have|nice-to-have|bonus|a plus|plus|preferred|ideally|familiarity|exposure"
+    r"|not required|optional)\b",
     re.I,
 )
-_SENTENCE = re.compile(r"[.;\n\u2022]|\s-\s|\s\u2014\s")
+_SENTENCE = re.compile(r"\.(?=\s|$)|[;\n\u2022]|\s-\s|\s\u2014\s")
 
 
 def _other_language_mentions(text: str) -> int:
@@ -304,16 +313,23 @@ def _other_language_mentions(text: str) -> int:
 def language_blocks(text: str | None) -> bool:
     body = text or ""
     mine = bool(_MY_LANGUAGE.search(body))
-    if _other_language_mentions(body) >= 2 and not mine:
-        return True
+    mandatory = 0
     for sentence in _SENTENCE.split(body):
-        if not _other_language_mentions(sentence):
+        mentions = _other_language_mentions(sentence)
+        if not mentions:
             continue
         if _MY_LANGUAGE.search(sentence) or _SOFT_CUE.search(sentence):
             continue
-        if _HARD_CUE.search(sentence) and not mine:
+        if _STRICT_CUE.search(sentence):
             return True
-    return False
+        if not mine and _WEAK_CUE.search(sentence):
+            return True
+        mandatory += mentions
+    return mandatory >= 2 and not mine
+
+
+def posting_fresh(posted_at: datetime | None, oldest: datetime) -> bool:
+    return posted_at is None or posted_at >= oldest
 
 
 def comp_fits(comp_max: int | None, currency: str | None) -> bool:
@@ -397,7 +413,7 @@ def fit_roles(
             and comp_fits(r.comp_max, r.comp_currency)
         ):
             continue
-        if r.posted_at is not None and r.posted_at < oldest:
+        if not posting_fresh(r.posted_at, oldest):
             continue
         if language_blocks(r.content_text):
             continue
