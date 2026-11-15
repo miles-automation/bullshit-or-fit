@@ -300,7 +300,7 @@ _ABILITY = re.compile(
 )
 _SOFT_CUE = re.compile(
     r"\b(nice to have|nice-to-have|bonus|a plus|plus|preferred|ideally|familiarity|exposure"
-    r"|not required|optional)\b",
+    r"|not required|optional|desirable|desired|helpful|advantageous|beneficial)\b",
     re.I,
 )
 _ALTERNATIVE = re.compile(r"\b(or|such as|one of|at least one|any of|either)\b", re.I)
@@ -309,7 +309,7 @@ _ANY_LANGUAGE = re.compile(
 )
 _WAIVER = re.compile(
     r"(\b(no|not|without)\b|n't\b)[^,;.]{0,40}\b(experience|required|necessary|needed|expected"
-    r"|essential|mandatory|a must)\b"
+    r"|essential|mandatory|a must|a prerequisite|a requirement)\b"
     r"|\b(will|we'll|we will) teach\b|\bno prior\b",
     re.I,
 )
@@ -317,6 +317,10 @@ _INTEGRATION = re.compile(
     r"\b(integrat\w*|interfac\w*|interoperat\w*|talk\w* to|consum\w*|migrat\w*)\b", re.I
 )
 _SENTENCE = re.compile(r"\.(?=\s|$)|[;\n\u2022]|\s-\s|\s\u2014\s")
+_MODIFIER = re.compile(
+    r"\s*(while|though|although|but|which|if|when|is|are|was|not|ideally|preferably)\b",
+    re.I,
+)
 _COMMA = re.compile(r",(?!\s*or\b)")
 
 
@@ -333,7 +337,7 @@ def _integration_only(clause: str) -> bool:
 
 
 def language_blocks(text: str | None) -> bool:
-    body = text or ""
+    body = (text or "").replace("\u2019", "'")
     mine = bool(_MY_LANGUAGE.search(body))
     marks = _soft_scope_marks(body)
     mandatory = 0
@@ -353,9 +357,19 @@ def language_blocks(text: str | None) -> bool:
             continue
         if _MY_LANGUAGE.search(sentence) and _ALTERNATIVE.search(sentence):
             continue
-        for clause in _COMMA.split(sentence):
+        clauses = _COMMA.split(sentence)
+        for index, clause in enumerate(clauses):
             mentions = _other_language_mentions(clause)
-            if not mentions or _SOFT_CUE.search(clause) or _WAIVER.search(clause):
+            if not mentions:
+                continue
+            scope = clause
+            for following in clauses[index + 1 :]:
+                if _other_language_mentions(following) or not _MODIFIER.match(
+                    following
+                ):
+                    break
+                scope += "," + following
+            if _SOFT_CUE.search(scope) or _WAIVER.search(scope):
                 continue
             if _integration_only(clause):
                 continue

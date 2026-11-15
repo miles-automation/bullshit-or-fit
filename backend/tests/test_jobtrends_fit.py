@@ -372,6 +372,21 @@ DITTO = (
         ),
         ("Go expertise required.", True),
         ("Rust experience isn't required. Our backend is Python.", False),
+        ("Python backend. Strong Rust skills are desirable.", False),
+        ("Python backend. Strong Rust experience isn\u2019t required.", False),
+        ("Python backend. Strong Rust experience is not a prerequisite.", False),
+        (
+            "Python backend. Production experience with Rust is not a requirement.",
+            False,
+        ),
+        (
+            "Python backend. Production experience with Rust, while not required, is a plus.",
+            False,
+        ),
+        (
+            "Python backend. Production Rust experience required, and Kubernetes is a plus.",
+            True,
+        ),
         ("Previous Rust experience is not essential.", False),
         (
             "Our backend is Python. Production experience integrating with Java services is required.",
