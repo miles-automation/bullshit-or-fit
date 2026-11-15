@@ -128,12 +128,16 @@ def parse_himalayas(payload: Any) -> list[ParsedJob]:
     return jobs
 
 
+class RateLimitedError(Exception):
+    pass
+
+
 class HimalayasClient:
     def __init__(
         self,
         *,
         timeout_seconds: float = 30.0,
-        pause_seconds: float = 1.0,
+        pause_seconds: float = 3.0,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -158,6 +162,8 @@ class HimalayasClient:
                 params=params,
                 headers={"User-Agent": settings.jobtrends_user_agent},
             )
+            if resp.status_code == 429:
+                raise RateLimitedError(resp.headers.get("Retry-After"))
             resp.raise_for_status()
             return parse_himalayas(resp.json())
 
@@ -197,10 +203,22 @@ def himalayas_snapshot(
     run_at = datetime.now(tz=UTC)
     fetched = 0
     new = 0
+    limited = False
     try:
         for query in queries:
+            if limited:
+                break
             for page in range(1, max_pages + 1):
-                jobs = client.search(query, page)
+                try:
+                    jobs = client.search(query, page)
+                except RateLimitedError:
+                    logger.warning(
+                        "jobtrends: Himalayas rate limit at %r page %s; stopping",
+                        query,
+                        page,
+                    )
+                    limited = True
+                    break
                 if not jobs:
                     break
                 unique = list({j.id: j for j in jobs}.values())
@@ -217,4 +235,4 @@ def himalayas_snapshot(
         close_expired(session, run_at)
         session.commit()
     logger.info("jobtrends: Himalayas — %s fetched, %s new", fetched, new)
-    return {"fetched": fetched, "new": new}
+    return {"fetched": fetched, "new": new, "rate_limited": int(limited)}

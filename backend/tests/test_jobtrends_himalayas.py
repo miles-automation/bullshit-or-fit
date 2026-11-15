@@ -122,3 +122,47 @@ def test_snapshot_still_closes_expired_when_search_fails(monkeypatch) -> None:  
     except httpx.ConnectError:
         pass
     assert len(closed) == 1
+
+
+def test_client_raises_rate_limited_on_429() -> None:
+    client = HimalayasClient(
+        transport=httpx.MockTransport(
+            lambda _r: httpx.Response(429, headers={"Retry-After": "60"})
+        ),
+        sleep=lambda _s: None,
+    )
+    try:
+        client.search("developer", 1)
+    except himalayas.RateLimitedError:
+        return
+    raise AssertionError("expected RateLimitedError")
+
+
+def test_snapshot_stops_cleanly_on_rate_limit(monkeypatch) -> None:  # noqa: ANN001
+    closed: list[datetime] = []
+    monkeypatch.setattr(
+        himalayas, "close_expired", lambda _s, run_at: closed.append(run_at)
+    )
+    monkeypatch.setattr(himalayas, "_known_ids", lambda _s, _ids, _b: set())
+    monkeypatch.setattr(himalayas, "upsert_jobs", lambda _s, _j, _r: None)
+
+    class _Session:
+        def rollback(self) -> None:
+            pass
+
+        def commit(self) -> None:
+            pass
+
+    calls: list[tuple[str, int]] = []
+
+    class _Limited:
+        def search(self, q: str, p: int) -> list[object]:
+            calls.append((q, p))
+            if p == 2:
+                raise himalayas.RateLimitedError("60")
+            return parse_himalayas({"jobs": [JOB]})
+
+    out = himalayas.himalayas_snapshot(_Session(), _Limited())  # type: ignore[arg-type]
+    assert out == {"fetched": 1, "new": 1, "rate_limited": 1}
+    assert calls == [("software engineer", 1), ("software engineer", 2)]
+    assert len(closed) == 1
