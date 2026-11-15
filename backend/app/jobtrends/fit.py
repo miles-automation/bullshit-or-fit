@@ -99,6 +99,8 @@ _OBT_AFTER = re.compile(
     r"|\W*(?:required|requirement|level(?:\s+must\s+be)?)?\W*(?:the\s+)?(able|ability|eligib\w*)"
     r"\s+to\s+(obtain|acquire|get)"
     r"|\W*(post-start|after start|once hired|after hire)\b"
+    r"|\s*,?\s*or\s+(?:be\s+able\s+to\s+|the\s+ability\s+to\s+|be\s+willing\s+to\s+)?"
+    r"(?:pass|complete|undergo|obtain|acquire|qualify|submit)\b"
     r"|[^.;]{0,20}?\bmay be (?:required|needed)\b"
     r"|[^.;]{0,30}?(?<!visa )\bsponsor\w*)",
     re.I,
