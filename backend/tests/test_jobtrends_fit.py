@@ -206,6 +206,28 @@ def test_format_fit_list() -> None:
         ("Nice to Have: Kubernetes\nActive Secret clearance required", "required"),
         ("Security Clearance Required: No", None),
         (
+            "US Citizenship required (future security clearance may be required)",
+            "sponsored",
+        ),
+        (
+            "Active or prior US security clearance, or exposure to digital forensics",
+            "sponsored",
+        ),
+        ("Active Secret or TS/SCI clearance required", "required"),
+        ("Active US Security Clearance (TS/SCI) required", "required"),
+        (
+            "Preferred Qualifications Experience with Python and distributed systems Active Secret clearance Required Qualifications Five years of software engineering experience",
+            "sponsored",
+        ),
+        (
+            "Preferred Qualifications:\nPython\nRequired:\nActive Secret clearance",
+            "required",
+        ),
+        (
+            "Required Qualifications Active Secret clearance Preferred Qualifications Kubernetes",
+            "required",
+        ),
+        (
             "Security Clearance: This position requires the ability to obtain a US Security Clearance for which the US Government requires US Citizenship",
             "sponsored",
         ),

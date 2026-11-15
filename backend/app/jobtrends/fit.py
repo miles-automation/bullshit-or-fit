@@ -91,7 +91,7 @@ _NEG_AFTER = re.compile(
     r"^[^.;]{0,35}?(\bnot (?:required|needed|necessary|a prerequisite)\b|\bnone)", re.I
 )
 _OBT_BEFORE = re.compile(
-    r"(?<!visa )\b(obtain\w*|acquire|be granted|eligib\w*|sponsor\w*|willing\w*)\b[^.;]{0,50}$",
+    r"(?<!visa )\b(obtain\w*|acquire|be granted|eligib\w*|sponsor\w*|willing\w*|future)\b[^.;]{0,50}$",
     re.I,
 )
 _OBT_AFTER = re.compile(
@@ -99,6 +99,8 @@ _OBT_AFTER = re.compile(
     r"|\W*(?:required|requirement|level(?:\s+must\s+be)?)?\W*(?:the\s+)?(able|ability|eligib\w*)"
     r"\s+to\s+(obtain|acquire|get)"
     r"|\W*(post-start|after start|once hired|after hire)\b"
+    r"|[^.;]{0,20}?\bmay be (?:required|needed)\b"
+    r"|\s*,?\s*or\s+(?!(?:an?\s+)?(?:active|current|top secret|ts/sci|secret|dod|interim)\b)"
     r"|[^.;]{0,30}?(?<!visa )\bsponsor\w*)",
     re.I,
 )
@@ -188,7 +190,8 @@ def _clause_status(clause: str) -> str | None:
 
 
 _SOFT_HEADING = re.compile(
-    r"\b(preferred (?:qualifications|skills|experience|requirements)|nice[- ]to[- ]haves?"
+    r"\b(preferred (?:qualifications|skills|experience|requirements)"
+    r"|nice[- ]to[- ]haves?(?:\s+for\s+this\s+role)?\s*:"
     r"|bonus points|pluses|desired (?:skills|qualifications|experience)|what would be nice"
     r"|preferred\s*:)",
     re.I,
@@ -198,6 +201,8 @@ _HARD_HEADING = re.compile(
     r"|requirements\s*:|what you(?:'ll| will) need|must[- ]haves?|who you are|what you bring)",
     re.I,
 )
+_REQUIRED_LINE = re.compile(r"^\s*required\s*:", re.I | re.M)
+_HEADING = re.compile(_SOFT_HEADING.pattern + "|" + _HARD_HEADING.pattern, re.I)
 _EXPLICIT_REQUIRED = re.compile(
     r"\b(required|requires?|must|minimum|mandatory)\b", re.I
 )
@@ -216,6 +221,7 @@ def _clause_spans(body: str) -> list[tuple[int, int]]:
 def _soft_scope_marks(body: str) -> list[tuple[int, bool]]:
     marks = [(m.end(), True) for m in _SOFT_HEADING.finditer(body)]
     marks += [(m.end(), False) for m in _HARD_HEADING.finditer(body)]
+    marks += [(m.end(), False) for m in _REQUIRED_LINE.finditer(body)]
     return sorted(marks)
 
 
@@ -229,7 +235,10 @@ def _in_soft_scope(marks: list[tuple[int, bool]], position: int) -> bool:
 
 
 def clearance_status(text: str | None) -> str | None:
+    if not _CLEARANCE_TERM.search(text or ""):
+        return None
     body = re.sub(r"\bu\.s\.", "US", text or "", flags=re.I)
+    body = _HEADING.sub(lambda m: "\n" + m.group(0), body)
     marks = _soft_scope_marks(body)
     result: str | None = None
     for start, end in _clause_spans(body):
