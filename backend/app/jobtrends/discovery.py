@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 import time
@@ -35,6 +34,7 @@ ORIGIN_YC = "yc"
 YC_HIRING_URL = "https://yc-oss.github.io/api/companies/hiring.json"
 MAX_TEAM_SIZE = 100
 REPROBE_AFTER = timedelta(days=7)
+RETRY_AFTER = timedelta(days=1)
 MAX_PROBES_PER_RUN = 400
 MAX_REQUESTS_PER_RUN = 900
 MAX_RUN_SECONDS = 30 * 60
@@ -105,13 +105,29 @@ def candidate_tokens(candidate: Candidate) -> list[str]:
     return tokens
 
 
-def board_jobs(provider: str, payload: Any) -> list[Any] | None:
+def board_jobs(provider: str, payload: Any) -> list[dict[str, Any]] | None:
     if provider == PROVIDER_LEVER:
-        return payload if isinstance(payload, list) else None
-    if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
-        jobs: list[Any] = payload["jobs"]
-        return jobs
-    return None
+        jobs = payload if isinstance(payload, list) else None
+    elif isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
+        jobs = payload["jobs"]
+    else:
+        jobs = None
+    if jobs is None or not all(isinstance(j, dict) for j in jobs):
+        return None
+    return jobs
+
+
+_ATS_URL = re.compile(r"https?://\S*(ashbyhq\.com|greenhouse\.io|lever\.co)\S*", re.I)
+
+
+def _job_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(_job_text(v) for v in value.values())
+    if isinstance(value, list):
+        return " ".join(_job_text(v) for v in value)
+    if isinstance(value, str):
+        return _ATS_URL.sub(" ", value)
+    return ""
 
 
 def _normalize(text: str) -> str:
@@ -130,7 +146,7 @@ def owns_board(candidate: Candidate, jobs: list[Any]) -> bool:
     name = _normalize(candidate.name)
     domain = _domain(candidate.website)
     for job in jobs[:OWNERSHIP_SAMPLE]:
-        raw = json.dumps(job, ensure_ascii=False).lower()
+        raw = _job_text(job).lower()
         if domain and domain in raw:
             return True
         if name and f" {name} " in f" {_normalize(raw)} ":
@@ -180,59 +196,96 @@ class BoardProber:
         resp.raise_for_status()
         return resp.json()
 
-    def probe(self, candidate: Candidate) -> ProbeResult:
-        conclusive = True
+    def probe(
+        self, candidate: Candidate, stored: tuple[str, str] | None = None
+    ) -> ProbeResult:
+        attempts: list[tuple[str, str]] = [stored] if stored else []
         for token in candidate_tokens(candidate):
             for provider in PROBE_ORDER:
-                if self.exhausted:
-                    return ProbeResult(None, False)
-                self._sleep(self._pause)
-                self.requests += 1
-                try:
-                    resp = self._client.get(PROBE_URLS[provider].format(token=token))
-                except httpx.HTTPError:
-                    conclusive = False
-                    continue
-                if resp.status_code == 404:
-                    continue
-                if resp.status_code != 200:
-                    conclusive = False
-                    continue
-                try:
-                    jobs = board_jobs(provider, resp.json())
-                except ValueError:
-                    conclusive = False
-                    continue
-                if jobs is None:
-                    conclusive = False
-                    continue
-                if owns_board(candidate, jobs):
-                    return ProbeResult(BoardHit(provider, token, len(jobs)), True)
+                if (provider, token) not in attempts:
+                    attempts.append((provider, token))
+        conclusive = True
+        for provider, token in attempts:
+            if self.exhausted:
+                return ProbeResult(None, False)
+            self._sleep(self._pause)
+            self.requests += 1
+            try:
+                resp = self._client.get(PROBE_URLS[provider].format(token=token))
+            except httpx.HTTPError:
+                conclusive = False
+                continue
+            if resp.status_code == 404:
+                continue
+            if resp.status_code != 200:
+                conclusive = False
+                continue
+            try:
+                jobs = board_jobs(provider, resp.json())
+            except ValueError:
+                conclusive = False
+                continue
+            if jobs is None:
+                conclusive = False
+                continue
+            if (provider, token) == stored or owns_board(candidate, jobs):
+                return ProbeResult(BoardHit(provider, token, len(jobs)), True)
         return ProbeResult(None, conclusive)
+
+
+@dataclass(frozen=True)
+class ProbeState:
+    probed_at: datetime | None
+    attempted_at: datetime | None
 
 
 def due_candidates(
     candidates: list[Candidate],
-    probed_at: dict[str, datetime],
+    state: dict[str, ProbeState],
     now: datetime,
     limit: int = MAX_PROBES_PER_RUN,
 ) -> list[Candidate]:
-    never = [c for c in candidates if c.slug not in probed_at]
-    stale = sorted(
-        (
-            c
-            for c in candidates
-            if c.slug in probed_at and probed_at[c.slug] < now - REPROBE_AFTER
-        ),
-        key=lambda c: probed_at[c.slug],
-    )
-    return (never + stale)[:limit]
+    never: list[Candidate] = []
+    stale: list[tuple[datetime, Candidate]] = []
+    for c in candidates:
+        st = state.get(c.slug)
+        if st is None or (st.probed_at is None and st.attempted_at is None):
+            never.append(c)
+            continue
+        if st.probed_at is not None and st.probed_at >= now - REPROBE_AFTER:
+            continue
+        if st.attempted_at is not None and st.attempted_at >= now - RETRY_AFTER:
+            continue
+        last = max(t for t in (st.probed_at, st.attempted_at) if t is not None)
+        stale.append((last, c))
+    stale.sort(key=lambda item: item[0])
+    return (never + [c for _, c in stale])[:limit]
 
 
 def _mapping(row: DiscoveredBoard | None) -> tuple[str, str] | None:
     if row is None or not row.found or row.provider is None or row.token is None:
         return None
     return (row.provider, row.token)
+
+
+def _record_attempt(
+    session: Session, origin: str, candidate: Candidate, run_at: datetime
+) -> None:
+    stmt = pg_insert(DiscoveredBoard).values(
+        origin=origin,
+        company_slug=candidate.slug,
+        company_name=candidate.name,
+        team_size=candidate.team_size,
+        website=candidate.website,
+        found=False,
+        attempted_at=run_at,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[DiscoveredBoard.origin, DiscoveredBoard.company_slug],
+        set_={"attempted_at": stmt.excluded.attempted_at},
+    )
+    session.execute(stmt)
+    session.commit()
 
 
 def discover_boards(
@@ -258,23 +311,26 @@ def discover_boards(
         for row in existing.values()
         if row.found and row.company_slug not in eligible
     ]
-    probed_at = {slug: row.probed_at for slug, row in existing.items()}
-    due = due_candidates(pool, probed_at, run_at, limit)
+    state = {
+        slug: ProbeState(row.probed_at, row.attempted_at)
+        for slug, row in existing.items()
+    }
+    due = due_candidates(pool, state, run_at, limit)
     probed = found = lost = inconclusive = 0
     for candidate in due:
         if prober.exhausted:
             break
+        old = _mapping(existing.get(candidate.slug))
         try:
-            result = prober.probe(candidate)
+            result = prober.probe(candidate, old)
         except Exception:  # noqa: BLE001
             logger.exception("jobtrends: board probe failed for %s", candidate.slug)
-            inconclusive += 1
-            continue
+            result = ProbeResult(None, False)
         if not result.conclusive:
+            _record_attempt(session, origin, candidate, run_at)
             inconclusive += 1
             continue
         hit = result.hit
-        old = _mapping(existing.get(candidate.slug))
         new = (hit.provider, hit.token) if hit else None
         if old is not None and old != new:
             if old not in seeded:
@@ -296,6 +352,7 @@ def discover_boards(
             token=hit.token if hit else None,
             found=hit is not None,
             probed_at=run_at,
+            attempted_at=run_at,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[DiscoveredBoard.origin, DiscoveredBoard.company_slug],
@@ -307,6 +364,7 @@ def discover_boards(
                 "token": stmt.excluded.token,
                 "found": stmt.excluded.found,
                 "probed_at": stmt.excluded.probed_at,
+                "attempted_at": stmt.excluded.attempted_at,
             },
         )
         session.execute(stmt)

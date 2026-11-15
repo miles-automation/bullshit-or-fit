@@ -19,7 +19,8 @@ def upgrade() -> None:
         sa.Column("provider", sa.Text(), nullable=True),
         sa.Column("token", sa.Text(), nullable=True),
         sa.Column("found", sa.Boolean(), nullable=False),
-        sa.Column("probed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("probed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("attempted_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("origin", "company_slug"),
         schema=SCHEMA,
     )

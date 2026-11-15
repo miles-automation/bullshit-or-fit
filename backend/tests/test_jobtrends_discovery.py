@@ -9,6 +9,7 @@ from app.jobtrends.discovery import (
     BoardProber,
     Candidate,
     ProbeResult,
+    ProbeState,
     board_jobs,
     candidate_tokens,
     due_candidates,
@@ -80,6 +81,8 @@ def test_board_jobs_by_provider() -> None:
     assert board_jobs(PROVIDER_LEVER, {"ok": False}) is None
     assert board_jobs(PROVIDER_ASHBY, {"jobs": [{}]}) == [{}]
     assert board_jobs(PROVIDER_GREENHOUSE, {"error": "x"}) is None
+    assert board_jobs(PROVIDER_ASHBY, {"jobs": [None]}) is None
+    assert board_jobs(PROVIDER_LEVER, [{}, "x"]) is None
 
 
 def test_owns_board_needs_name_or_domain_in_jobs() -> None:
@@ -88,18 +91,39 @@ def test_owns_board_needs_name_or_domain_in_jobs() -> None:
     assert owns_board(acme, [{"applyUrl": "https://careers.acme.ai/apply"}])
     assert not owns_board(acme, [{"descriptionPlain": "At Acmeco we sell shoes."}])
     assert not owns_board(acme, [])
+    assert not owns_board(
+        Candidate("acme", "Acme", 3, None),
+        [
+            {
+                "hostedUrl": "https://jobs.lever.co/acme/123",
+                "descriptionPlain": "Other Co is hiring. Apply at https://jobs.lever.co/acme/123",
+            }
+        ],
+    )
 
 
 def test_due_candidates_orders_never_probed_then_oldest() -> None:
     now = datetime(2026, 11, 15, tzinfo=UTC)
     a, b, c, d = (Candidate(s, s, 5, None) for s in "abcd")
-    probed = {
-        "b": now - timedelta(days=30),
-        "c": now - timedelta(days=8),
-        "d": now - timedelta(days=1),
+    state = {
+        "b": ProbeState(now - timedelta(days=30), now - timedelta(days=30)),
+        "c": ProbeState(now - timedelta(days=8), now - timedelta(days=8)),
+        "d": ProbeState(now - timedelta(days=1), now - timedelta(days=1)),
     }
-    assert due_candidates([d, c, b, a], probed, now) == [a, b, c]
-    assert due_candidates([d, c, b, a], probed, now, limit=2) == [a, b]
+    assert due_candidates([d, c, b, a], state, now) == [a, b, c]
+    assert due_candidates([d, c, b, a], state, now, limit=2) == [a, b]
+
+
+def test_inconclusive_attempts_rotate_instead_of_hogging_the_budget() -> None:
+    now = datetime(2026, 11, 15, tzinfo=UTC)
+    stuck, fresh, retry = (
+        Candidate(s, s, 5, None) for s in ("stuck", "fresh", "retry")
+    )
+    state = {
+        "stuck": ProbeState(None, now - timedelta(hours=2)),
+        "retry": ProbeState(None, now - timedelta(days=2)),
+    }
+    assert due_candidates([stuck, retry, fresh], state, now) == [fresh, retry]
 
 
 def _prober(handler, **kw) -> BoardProber:  # noqa: ANN001, ANN003
@@ -170,6 +194,30 @@ def test_probe_rejects_unrelated_board_and_keeps_looking() -> None:
     assert result.hit == BoardHit(PROVIDER_GREENHOUSE, "acme-ai", 1)
 
 
+def test_probe_tries_stored_mapping_first_and_trusts_it() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == "api.lever.co" and request.url.path.endswith("/acme"):
+            return httpx.Response(200, json=[{"id": "1", "descriptionPlain": "Acme"}])
+        return httpx.Response(404)
+
+    renamed = Candidate("acme-ai-2", "Acme Labs", 9, None)
+    result = _prober(handler).probe(renamed, (PROVIDER_LEVER, "acme"))
+    assert result == ProbeResult(BoardHit(PROVIDER_LEVER, "acme", 1), True)
+    assert seen == ["https://api.lever.co/v0/postings/acme?mode=json"]
+
+
+def test_probe_malformed_entries_are_inconclusive() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.ashbyhq.com":
+            return httpx.Response(200, json={"jobs": [None]})
+        return httpx.Response(404)
+
+    assert _prober(handler).probe(ACME) == ProbeResult(None, False)
+
+
 def test_probe_stops_at_request_budget() -> None:
     prober = _prober(lambda _r: httpx.Response(404), max_requests=2)
     assert prober.probe(ACME) == ProbeResult(None, False)
@@ -200,6 +248,7 @@ class _Row:
         self.token = token
         self.found = found
         self.probed_at = datetime(2026, 10, 1, tzinfo=UTC)
+        self.attempted_at = datetime(2026, 10, 1, tzinfo=UTC)
 
 
 class _Session:
@@ -223,8 +272,11 @@ class _ScriptedProber:
         self.probed: list[str] = []
         self.exhausted = False
 
-    def probe(self, candidate: Candidate) -> ProbeResult:
+    def probe(
+        self, candidate: Candidate, stored: tuple[str, str] | None = None
+    ) -> ProbeResult:
         self.probed.append(candidate.slug)
+        self.stored = stored
         return self._results[candidate.slug]
 
 
@@ -259,8 +311,9 @@ def test_inconclusive_probe_keeps_mapping_and_closes_nothing(monkeypatch) -> Non
         [Candidate("acme", "Acme", 5, None)],
     )
     assert closed == []
-    assert session.upserts == 0
+    assert session.upserts == 1
     assert out["inconclusive"] == 1
+    assert out["probed"] == 0
 
 
 def test_conclusive_miss_closes_old_board(monkeypatch) -> None:  # noqa: ANN001
@@ -273,6 +326,7 @@ def test_conclusive_miss_closes_old_board(monkeypatch) -> None:  # noqa: ANN001
     )
     assert closed == [(PROVIDER_LEVER, "acme")]
     assert out["lost"] == 1
+    assert _p.stored == (PROVIDER_LEVER, "acme")
 
 
 def test_board_replacement_closes_previous_board(monkeypatch) -> None:  # noqa: ANN001

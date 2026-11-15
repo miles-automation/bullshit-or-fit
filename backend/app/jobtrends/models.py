@@ -257,7 +257,8 @@ class DiscoveredBoard(Base):
     provider: Mapped[str | None] = mapped_column(Text)
     token: Mapped[str | None] = mapped_column(Text)
     found: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
-    probed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    probed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CommuteShedEmployer(Base):
