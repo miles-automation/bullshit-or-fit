@@ -83,7 +83,8 @@ _CLAUSE = re.compile(
 _NEG_BEFORE = re.compile(
     r"(\b(no|without)\s+(?:[\w/-]+\s+){0,3}"
     r"|\b(?:do|does|will|did)\s+not\s+(?:need|require|have to have)\s+(?:[\w/-]+\s+){0,3}"
-    r"|n't\s+(?:need|require)\s+(?:[\w/-]+\s+){0,3})$",
+    r"|n't\s+(?:need|require)\s+(?:[\w/-]+\s+){0,3}"
+    r"|\bnot\s+(?:required|needed|necessary|expected)\s+to\s+(?:have|possess|hold|maintain)\s+(?:[\w/-]+\s+){0,3})$",
     re.I,
 )
 _NEG_AFTER = re.compile(
@@ -111,9 +112,12 @@ _STRICT_AFTER = re.compile(
 _ACTIVE_BEFORE = re.compile(r"\b(active|current|existing)\b[^.;]{0,35}$", re.I)
 _ACTIVE_AFTER = re.compile(r"^[^.;]{0,25}?\((?:active|current)\)", re.I)
 _SOFT_AFTER = re.compile(
-    r"^\s*(?:or\s+[\w/-]+\s+)?(?:\([^)]{0,30}\)\s*)?(?:is|are|would be)?\s*(?:a\s+|strongly\s+)?"
+    r"^\s*(?:or\s+[\w/-]+\s+)?(?:\([^)]{0,30}\)\s*)?(?:is|are|would be)?\s*(?:a\s+|strongly\s+|highly\s+)?"
     r"(preferred|desired|a plus|plus|bonus|nice[- ]to[- ]have|optional|advantageous)\b",
     re.I,
+)
+_SOFT_BEFORE = re.compile(
+    r"\b(ideally|preferably|preference (?:for|given to)|nice if)\b[^.;]{0,50}$", re.I
 )
 _SOFT_LABEL_BEFORE = re.compile(
     r"\b(nice[- ]to[- ]have|preferred|bonus|desired|pluses)\b[^:]{0,30}:[^:]{0,45}$",
@@ -123,7 +127,9 @@ _BEFORE = 60
 _LABEL = re.compile(
     r"^\s*((?:level|requirements?|required|type|status)\b[^.;:\n]{0,30})?:\s*", re.I
 )
-_LABEL_NONE = re.compile(r"^\s*(?:[Nn]one|NONE|N/A|n/a|[Nn]ot [Rr]equired)(?![a-z])")
+_LABEL_NONE = re.compile(
+    r"^\s*(?:[Nn]one|NONE|N/A|n/a|[Nn]ot [Rr]equired|No|NO)(?![a-z])"
+)
 _LABEL_OBTAIN = re.compile(r"\b(obtain\w*|eligib\w*|sponsor\w*|acquire)\b", re.I)
 _LABEL_HARD = re.compile(
     r"\b(active|current|must|required|requires?|requirement|minimum|possess|hold)\b|\((?:active|current)\)",
@@ -164,7 +170,9 @@ def _clause_status(clause: str) -> str | None:
             status = status or CLEARANCE_SPONSORED
             continue
         if (
-            _SOFT_AFTER.search(after) or _SOFT_LABEL_BEFORE.search(before)
+            _SOFT_AFTER.search(after)
+            or _SOFT_LABEL_BEFORE.search(before)
+            or _SOFT_BEFORE.search(before)
         ) and not _STRICT_AFTER.search(after):
             status = status or CLEARANCE_SPONSORED
             continue
@@ -179,13 +187,59 @@ def _clause_status(clause: str) -> str | None:
     return status
 
 
+_SOFT_HEADING = re.compile(
+    r"\b(preferred (?:qualifications|skills|experience|requirements)|nice[- ]to[- ]haves?"
+    r"|bonus points|pluses|desired (?:skills|qualifications|experience)|what would be nice"
+    r"|preferred\s*:)",
+    re.I,
+)
+_HARD_HEADING = re.compile(
+    r"\b(required (?:qualifications|skills|experience)|minimum qualifications|basic qualifications"
+    r"|requirements\s*:|what you(?:'ll| will) need|must[- ]haves?|who you are|what you bring)",
+    re.I,
+)
+_EXPLICIT_REQUIRED = re.compile(
+    r"\b(required|requires?|must|minimum|mandatory)\b", re.I
+)
+
+
+def _clause_spans(body: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    start = 0
+    for m in _CLAUSE.finditer(body):
+        spans.append((start, m.start()))
+        start = m.end()
+    spans.append((start, len(body)))
+    return spans
+
+
+def _soft_scope_marks(body: str) -> list[tuple[int, bool]]:
+    marks = [(m.end(), True) for m in _SOFT_HEADING.finditer(body)]
+    marks += [(m.end(), False) for m in _HARD_HEADING.finditer(body)]
+    return sorted(marks)
+
+
+def _in_soft_scope(marks: list[tuple[int, bool]], position: int) -> bool:
+    current = False
+    for at, soft in marks:
+        if at > position:
+            break
+        current = soft
+    return current
+
+
 def clearance_status(text: str | None) -> str | None:
     body = re.sub(r"\bu\.s\.", "US", text or "", flags=re.I)
+    marks = _soft_scope_marks(body)
     result: str | None = None
-    for clause in _CLAUSE.split(body):
+    for start, end in _clause_spans(body):
+        clause = body[start:end]
         status = _clause_status(clause)
         if status == CLEARANCE_REQUIRED:
-            return CLEARANCE_REQUIRED
+            if _in_soft_scope(marks, end) and not _EXPLICIT_REQUIRED.search(clause):
+                status = CLEARANCE_SPONSORED
+            else:
+                return CLEARANCE_REQUIRED
         result = result or status
     return result
 

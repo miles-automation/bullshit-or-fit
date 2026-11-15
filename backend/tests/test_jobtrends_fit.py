@@ -187,6 +187,24 @@ def test_format_fit_list() -> None:
         ),
         ("Must be willing and able to obtain a Secret clearance", "sponsored"),
         ("Our secret sauce is great people", None),
+        ("Applicants are not required to have an active Secret clearance.", None),
+        ("An active Secret clearance is highly preferred.", "sponsored"),
+        ("Active Secret clearance is highly desired", "sponsored"),
+        ("Ideally candidates hold an active Secret clearance", "sponsored"),
+        (
+            "Preferred Qualifications: Five years of Python development experience Active Secret clearance",
+            "sponsored",
+        ),
+        (
+            "Preferred Qualifications:\nFive years of Python\nActive Secret clearance",
+            "sponsored",
+        ),
+        (
+            "Preferred Qualifications: Python\nRequirements: Active Secret clearance",
+            "required",
+        ),
+        ("Nice to Have: Kubernetes\nActive Secret clearance required", "required"),
+        ("Security Clearance Required: No", None),
         (
             "Security Clearance: This position requires the ability to obtain a US Security Clearance for which the US Government requires US Citizenship",
             "sponsored",
