@@ -384,6 +384,14 @@ DITTO = (
             False,
         ),
         (
+            "Python backend. Strong Rust experience required, but Kubernetes experience is optional.",
+            True,
+        ),
+        (
+            "Python backend. Strong Rust experience required, while Kubernetes experience is preferred.",
+            True,
+        ),
+        (
             "Python backend. Production Rust experience required, and Kubernetes is a plus.",
             True,
         ),
