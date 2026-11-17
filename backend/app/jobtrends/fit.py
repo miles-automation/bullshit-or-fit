@@ -410,6 +410,9 @@ def _is_conjunction(gap: str) -> bool:
 def _group_excused(
     sentence: str, group: list[tuple[int, int, bool]], gaps: list[str]
 ) -> bool:
+    lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
+    if _LIST_LEAD.search(lead):
+        return any(mine for *_, mine in group)
     segments: list[tuple[list[bool], bool]] = [([group[0][2]], False)]
     for gap, span in zip(gaps, group[1:], strict=True):
         if _is_conjunction(gap):
@@ -418,12 +421,10 @@ def _group_excused(
         members, has_or = segments[-1]
         alternative = has_or or bool(re.search(r"\bor\b|/", gap, re.I))
         segments[-1] = (members + [span[2]], alternative)
-    lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
-    for position, (members, has_or) in enumerate(segments):
+    for members, has_or in segments:
         if all(members):
             continue
-        offered = has_or or (position == 0 and bool(_LIST_LEAD.search(lead)))
-        if not (any(members) and offered):
+        if not (any(members) and has_or):
             return False
     return True
 

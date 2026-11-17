@@ -512,6 +512,9 @@ def test_rank_puts_untraceable_after_traceable_and_tags_it() -> None:
         ("Strong proficiency in Rust (or Python).", False),
         ("Strong experience with Python or with Rust.", False),
         ("Must have Rust experience and Python or Java proficiency.", True),
+        ("Proficiency in at least one of Python and Rust is required.", False),
+        ("Strong experience in a programming language such as Python and Rust.", False),
+        ("Proficiency in at least one of Go and Rust is required.", True),
         (
             "Experience with TypeScript, and working in Kotlin or Java services Expertise with PostgreSQL.",
             False,
