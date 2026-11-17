@@ -348,7 +348,14 @@ _LEARN_END = re.compile(
     re.I,
 )
 _NEXT_BULLET = re.compile(r"\s+[A-Z][a-z]+\s+[a-z]")
-_HARD_CUE = r"(?:must|required|requires|minimum|mandatory|\d+\+?\s*years?)"
+_HARD_CUE = r"(?:must|require|required|requires|minimum|mandatory|\d+\+?\s*years?)"
+_STRICT_LANGUAGE_CUE = re.compile(
+    r"\b(?:production|strong|deep|expert\w*|proficien\w*|years|minimum|required|must)\b",
+    re.I,
+)
+_EXPERIENCE_NOUN = re.compile(
+    r"\b(?:experience|expertise|proficiency|skills?|years|background|fluency)\b", re.I
+)
 
 
 def _language_pattern(language: str) -> str:
@@ -357,38 +364,71 @@ def _language_pattern(language: str) -> str:
     return r"(?<![\w+])" + re.escape(language) + r"(?![\w+])"
 
 
+def _language_flags(language: str) -> int:
+    return 0 if language in ("go", "golang") else re.I
+
+
+def _phrase_languages(body: str, cue: re.Match[str]) -> list[tuple[str, int, int]]:
+    window = re.split(r"[.;\n]", body[cue.end() : cue.end() + 30], maxsplit=1)[0]
+    found = [
+        (x.group(0).lower(), cue.end() + x.start(), cue.end() + x.end())
+        for x in _OTHER_LANGUAGE.finditer(window)
+    ]
+    for go in re.finditer(r"\b(?:Go|[Gg]olang)\b", window):
+        found.append(("go", cue.end() + go.start(), cue.end() + go.end()))
+    return found
+
+
+def _neutralize_learning_phrases(body: str) -> tuple[str, set[str]]:
+    learnable: set[str] = set()
+    pieces: list[str] = []
+    cursor = 0
+    for cue in _LEARN_CUE.finditer(body):
+        for language, start, stop in sorted(
+            _phrase_languages(body, cue), key=lambda x: x[1]
+        ):
+            if start < cursor:
+                continue
+            rest = body[stop : stop + 30]
+            if _LEARN_END.match(rest) or _NEXT_BULLET.match(rest):
+                learnable.add(language)
+            pieces.append(body[cursor:start])
+            pieces.append(_LEARNABLE_TOKEN)
+            cursor = stop
+    pieces.append(body[cursor:])
+    return "".join(pieces), learnable
+
+
 def _explicitly_required(body: str, language: str) -> bool:
     lang = _language_pattern(language)
-    return bool(
-        re.search(_HARD_CUE + r"[^.;\n]{0,60}" + lang, body, re.I)
-        or re.search(
-            lang + r"[^.;\n]{0,40}\b(?:required|is a must|mandatory)\b", body, re.I
-        )
-    )
-
-
-def _learnable_languages(body: str) -> set[str]:
-    learnable: set[str] = set()
-    for m in _LEARN_CUE.finditer(body):
-        window = re.split(r"[.;\n]", body[m.end() : m.end() + 30], maxsplit=1)[0]
-        found = [
-            (x.group(0).lower(), x.end()) for x in _OTHER_LANGUAGE.finditer(window)
-        ]
-        go = re.search(r"\b(?:Go|[Gg]olang)\b", window)
-        if go:
-            found.append(("go", go.end()))
-        for language, stop in found:
-            rest = body[m.end() + stop : m.end() + stop + 30]
-            ends = bool(_LEARN_END.match(rest) or _NEXT_BULLET.match(rest))
-            if ends and not _explicitly_required(body, language):
-                learnable.add(language)
-    return learnable
+    flags = _language_flags(language)
+    if re.search(r"(?i:" + _HARD_CUE + r")[^.;\n]{0,60}" + lang, body, flags):
+        return True
+    if re.search(
+        lang + r"[^.;\n]{0,40}(?i:\b(?:required|is a must|mandatory)\b)", body, flags
+    ):
+        return True
+    for m in re.finditer(lang, body, flags):
+        before = re.split(r"[.;\n]", body[max(0, m.start() - 20) : m.start()])[-1]
+        after = re.split(r"[.;\n]", body[m.end() : m.end() + 20])[0]
+        around = body[max(0, m.start() - 40) : m.end() + 40]
+        if _EXPERIENCE_NOUN.search(
+            before + " " + after
+        ) and _STRICT_LANGUAGE_CUE.search(around):
+            return True
+    return False
 
 
 def _neutralize_learnable(body: str) -> str:
-    for language in _learnable_languages(body):
-        flags = 0 if language in ("go", "golang") else re.I
-        body = re.sub(_language_pattern(language), _LEARNABLE_TOKEN, body, flags=flags)
+    body, learnable = _neutralize_learning_phrases(body)
+    for language in learnable:
+        if not _explicitly_required(body, language):
+            body = re.sub(
+                _language_pattern(language),
+                _LEARNABLE_TOKEN,
+                body,
+                flags=_language_flags(language),
+            )
     return body
 
 

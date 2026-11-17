@@ -607,3 +607,26 @@ def test_learning_waiver_respects_explicit_requirements(
     text: str, blocked: bool
 ) -> None:
     assert language_blocks(text) is blocked
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (
+            "We require production Rust experience. Eager to learn Rust and its ecosystem.",
+            True,
+        ),
+        (
+            "Required qualifications:\nProduction Rust experience.\nEager to learn Rust and its ecosystem.",
+            True,
+        ),
+        ("5+ years of Python experience and willingness to learn Rust.", False),
+        (
+            "Write and operate production services in Python and Rust on AWS. Must be willing to learn Rust.",
+            False,
+        ),
+        ("We must go fast. Production Python experience. Happy to learn Go.", False),
+    ],
+)
+def test_learning_waiver_local_then_guarded(text: str, blocked: bool) -> None:
+    assert language_blocks(text) is blocked
