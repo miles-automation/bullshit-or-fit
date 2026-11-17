@@ -478,6 +478,9 @@ def test_language_alternatives_must_be_in_the_same_list(
 def test_normalize_company_ignores_legal_suffixes() -> None:
     assert normalize_company("Lyric, Inc.") == normalize_company("Lyric")
     assert normalize_company("Bask Health") == "baskhealth"
+    assert normalize_company("Acme Incorporated") == normalize_company("Acme")
+    assert normalize_company("Acme, L.L.C.") == normalize_company("Acme")
+    assert normalize_company("Acme GmbH") == normalize_company("Acme")
 
 
 def test_is_traceable_only_checks_aggregator_rows() -> None:
@@ -500,3 +503,32 @@ def test_rank_puts_untraceable_after_traceable_and_tags_it() -> None:
     )
     assert sorted([untraced, traced], key=rank_key) == [traced, untraced]
     assert "[not on company site]" in format_fit_list([untraced], 1, now=day)
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        ("Strong experience in Go (Golang) or Python.", False),
+        ("Strong proficiency in Rust (or Python).", False),
+        ("Strong experience in Python or C/C++ required.", False),
+        ("Strong experience in Go, Rust, or Python. Willingness to learn Rust.", False),
+        (
+            "We offer opportunities to learn and grow. Strong Rust experience required.",
+            True,
+        ),
+        (
+            "Five years of Rust experience required. There is no time to learn Rust on the job.",
+            True,
+        ),
+    ],
+)
+def test_language_decorated_alternatives_and_learning(text: str, blocked: bool) -> None:
+    assert language_blocks(text) is blocked
+
+
+def test_list_gap_is_linear_on_long_whitespace() -> None:
+    import time
+
+    start = time.perf_counter()
+    language_blocks("Strong Rust" + " " * 20000 + "or Python experience required.")
+    assert time.perf_counter() - start < 0.5

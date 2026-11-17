@@ -284,7 +284,7 @@ _GO = re.compile(
     r"|proficiency|knowledge|development|services?\b|code\b|programming|microservices))"
 )
 _MY_LANGUAGE = re.compile(
-    r"(?<![\w.])(python|typescript|javascript|java|node\.?js|react|swift|c#)(?!\w)"
+    r"(?<![\w.])(python|typescript|javascript|java|node\.?js|react|swift|c#|learnablelang)(?!\w)"
     r"|(?<!\w)\.net\b",
     re.I,
 )
@@ -308,7 +308,7 @@ _ANY_LANGUAGE = re.compile(
     r"(?:[\w-]+\s+){0,2}languages?\b",
     re.I,
 )
-_LIST_GAP = re.compile(r"^\s*(?:,|/)?\s*(?:(?:or|and|and/or)\s+)?$", re.I)
+_LIST_GAP = re.compile(r"^[\s,/]*(?:(?:and/or|or|and)\b[\s,/]*)?$", re.I)
 _LIST_LEAD = re.compile(
     r"\b(such as|one of|at least one|any of|either)\b[^.;]{0,30}$", re.I
 )
@@ -333,10 +333,17 @@ def _other_language_mentions(text: str) -> int:
     return len(_OTHER_LANGUAGE.findall(text)) + len(_GO.findall(text))
 
 
+_LEARN_CUE = re.compile(
+    r"\b(?:desire|willing(?:ness)?|eager(?:ness)?|open|happy|excited|keen|able)\s+to\s+learn\b",
+    re.I,
+)
+_LEARNABLE_TOKEN = "learnablelang"
+
+
 def _learnable_languages(body: str) -> set[str]:
     learnable: set[str] = set()
-    for m in re.finditer(r"\bto learn\b", body, re.I):
-        window = body[m.end() : m.end() + 40]
+    for m in _LEARN_CUE.finditer(body):
+        window = re.split(r"[.;\n]", body[m.end() : m.end() + 30], maxsplit=1)[0]
         learnable.update(x.group(0).lower() for x in _OTHER_LANGUAGE.finditer(window))
         if re.search(r"\b(?:Go|[Gg]olang)\b", window):
             learnable.add("go")
@@ -346,15 +353,21 @@ def _learnable_languages(body: str) -> set[str]:
 def _neutralize_learnable(body: str) -> str:
     for language in _learnable_languages(body):
         if language in ("go", "golang"):
-            body = re.sub(r"\bGo\b|\b[Gg]olang\b", "LEARNABLE", body)
+            body = re.sub(r"\bGo\b|\b[Gg]olang\b", _LEARNABLE_TOKEN, body)
         else:
             body = re.sub(
                 r"(?<![\w+])" + re.escape(language) + r"(?![\w+])",
-                "LEARNABLE",
+                _LEARNABLE_TOKEN,
                 body,
                 flags=re.I,
             )
     return body
+
+
+def _list_gap(gap: str) -> bool:
+    cleaned = re.sub(r"[()]", " ", gap)
+    cleaned = re.sub(r"\bc\s*/\s*$", " ", cleaned, flags=re.I)
+    return bool(_LIST_GAP.match(cleaned))
 
 
 def _language_spans(text: str) -> list[tuple[int, int, bool]]:
@@ -372,7 +385,7 @@ def _offers_familiar_alternative(sentence: str) -> bool:
         gaps: list[str] = []
         while index + 1 < len(spans):
             gap = sentence[group[-1][1] : spans[index + 1][0]]
-            if not _LIST_GAP.match(gap):
+            if not _list_gap(gap):
                 break
             gaps.append(gap)
             index += 1
@@ -485,12 +498,13 @@ def rank_key(role: FitRole) -> tuple[int, int, float, int]:
 
 FIRST_PARTY_SOURCES = (SOURCE_ATS, "commute_shed")
 _COMPANY_NOISE = re.compile(
-    r"\b(inc|llc|ltd|limited|corp|corporation|co|company|technologies|technology|the)\b"
+    r"\b(inc|incorporated|llc|llp|plc|gmbh|ltd|limited|corp|corporation|co|company"
+    r"|technologies|technology|the)\b"
 )
 
 
 def normalize_company(name: str) -> str:
-    text = name.lower().replace("&", " and ")
+    text = re.sub(r"(?<=\w)\.(?=\w)|\.$", "", name.lower()).replace("&", " and ")
     text = _COMPANY_NOISE.sub(" ", re.sub(r"[^a-z0-9&]+", " ", text))
     return re.sub(r"[^a-z0-9]+", "", text)
 
