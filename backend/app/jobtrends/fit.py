@@ -308,7 +308,11 @@ _ANY_LANGUAGE = re.compile(
     r"(?:[\w-]+\s+){0,2}languages?\b",
     re.I,
 )
-_LIST_GAP = re.compile(r"^[\s,/]*(?:(?:and/or|or|and)\b[\s,/]*)?$", re.I)
+_LIST_GAP = re.compile(
+    r"^[\s,/]*(?:[a-z][a-z-]*\s+){0,2}(?:,\s*)?"
+    r"(?:(?:and/or|or|and)\b[\s,/]*(?:[a-z][a-z-]*\s+){0,3})?$",
+    re.I,
+)
 _LIST_LEAD = re.compile(
     r"\b(such as|one of|at least one|any of|either)\b[^.;]{0,30}$", re.I
 )
