@@ -484,7 +484,7 @@ def language_blocks(text: str | None) -> bool:
                 scope += "," + following
             if _SOFT_CUE.search(scope) or _WAIVER.search(scope):
                 continue
-            if _integration_only(clause):
+            if _integration_only(clause) or _offers_familiar_alternative(clause):
                 continue
             if not _ABILITY.search(clause):
                 mandatory += mentions
