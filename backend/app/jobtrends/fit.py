@@ -369,14 +369,25 @@ def _language_flags(language: str) -> int:
 
 
 def _phrase_languages(body: str, cue: re.Match[str]) -> list[tuple[str, int, int]]:
-    window = re.split(r"[.;\n]", body[cue.end() : cue.end() + 30], maxsplit=1)[0]
+    window = re.split(r"[.;\n]", body[cue.end() : cue.end() + 40], maxsplit=1)[0]
     found = [
         (x.group(0).lower(), cue.end() + x.start(), cue.end() + x.end())
         for x in _OTHER_LANGUAGE.finditer(window)
     ]
     for go in re.finditer(r"\b(?:Go|[Gg]olang)\b", window):
         found.append(("go", cue.end() + go.start(), cue.end() + go.end()))
-    return found
+    found.sort(key=lambda item: item[1])
+    phrase: list[tuple[str, int, int]] = []
+    previous = cue.end()
+    for language, start, stop in found:
+        gap = body[previous:start]
+        if phrase and not _BARE_GAP.match(gap):
+            break
+        if not phrase and not re.match(r"^\s+(?:[\w-]+\s+){0,2}$", gap):
+            break
+        phrase.append((language, start, stop))
+        previous = stop
+    return phrase
 
 
 def _neutralize_learning_phrases(body: str) -> tuple[str, set[str]]:
