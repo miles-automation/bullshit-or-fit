@@ -342,14 +342,23 @@ _LEARN_CUE = re.compile(
     re.I,
 )
 _LEARNABLE_TOKEN = "learnablelang"
+_LEARN_SUBAREA = re.compile(
+    r"\s*(?:'s\s+)?(?:internals|ecosystem|codebase|code base|tooling|runtime|compiler|"
+    r"libraries|frameworks|services|stack|source|standard library)\b",
+    re.I,
+)
 
 
 def _learnable_languages(body: str) -> set[str]:
     learnable: set[str] = set()
     for m in _LEARN_CUE.finditer(body):
         window = re.split(r"[.;\n]", body[m.end() : m.end() + 30], maxsplit=1)[0]
-        learnable.update(x.group(0).lower() for x in _OTHER_LANGUAGE.finditer(window))
-        if re.search(r"\b(?:Go|[Gg]olang)\b", window):
+        tail = body[m.end() : m.end() + 60]
+        for x in _OTHER_LANGUAGE.finditer(window):
+            if not _LEARN_SUBAREA.match(tail[x.end() :]):
+                learnable.add(x.group(0).lower())
+        go = re.search(r"\b(?:Go|[Gg]olang)\b", window)
+        if go and not _LEARN_SUBAREA.match(tail[go.end() :]):
             learnable.add("go")
     return learnable
 
