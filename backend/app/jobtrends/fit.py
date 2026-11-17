@@ -402,7 +402,11 @@ def _language_groups(
     return groups
 
 
-_BARE_GAP = re.compile(r"^[\s,/()]*(?:(?:and/or|or|and)\b[\s,/()]*)?$", re.I)
+_BARE_GAP = re.compile(
+    r"^[\s,/()]*(?:(?:and/or|or|and)\b[\s,/()]*)?"
+    r"(?:(?:modern|idiomatic|recent|contemporary|typed|native|functional|object-oriented)\s+){0,2}$",
+    re.I,
+)
 
 
 def _is_conjunction(gap: str) -> bool:
