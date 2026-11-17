@@ -515,6 +515,12 @@ def test_rank_puts_untraceable_after_traceable_and_tags_it() -> None:
         ("Proficiency in at least one of Python and Rust is required.", False),
         ("Strong experience in a programming language such as Python and Rust.", False),
         ("Proficiency in at least one of Go and Rust is required.", True),
+        ("Experience in one of Python or Java and strong Rust skills required.", True),
+        (
+            "Experience in one of Python or Java and production Go experience required.",
+            True,
+        ),
+        ("Strong experience in a language such as Go, Rust, Node.js or Python.", False),
         (
             "Experience with TypeScript, and working in Kotlin or Java services Expertise with PostgreSQL.",
             False,

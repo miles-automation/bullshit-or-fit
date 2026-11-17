@@ -402,6 +402,9 @@ def _language_groups(
     return groups
 
 
+_BARE_GAP = re.compile(r"^[\s,/()]*(?:(?:and/or|or|and)\b[\s,/()]*)?$", re.I)
+
+
 def _is_conjunction(gap: str) -> bool:
     text = gap.lower().replace("and/or", "or")
     return bool(re.search(r"\band\b", text)) and not re.search(r"\bor\b|/", text)
@@ -411,10 +414,13 @@ def _group_excused(
     sentence: str, group: list[tuple[int, int, bool]], gaps: list[str]
 ) -> bool:
     lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
-    if _LIST_LEAD.search(lead):
-        return any(mine for *_, mine in group)
-    segments: list[tuple[list[bool], bool]] = [([group[0][2]], False)]
+    in_lead = bool(_LIST_LEAD.search(lead))
+    segments: list[tuple[list[bool], bool]] = [([group[0][2]], in_lead)]
     for gap, span in zip(gaps, group[1:], strict=True):
+        if in_lead and _BARE_GAP.match(gap):
+            segments[-1] = (segments[-1][0] + [span[2]], True)
+            continue
+        in_lead = False
         if _is_conjunction(gap):
             segments.append(([span[2]], False))
             continue
