@@ -381,8 +381,11 @@ def _language_spans(text: str) -> list[tuple[int, int, bool]]:
     return sorted(spans)
 
 
-def _offers_familiar_alternative(sentence: str) -> bool:
+def _language_groups(
+    sentence: str,
+) -> list[tuple[list[tuple[int, int, bool]], list[str]]]:
     spans = _language_spans(sentence)
+    groups: list[tuple[list[tuple[int, int, bool]], list[str]]] = []
     index = 0
     while index < len(spans):
         group = [spans[index]]
@@ -395,15 +398,45 @@ def _offers_familiar_alternative(sentence: str) -> bool:
             index += 1
             group.append(spans[index])
         index += 1
-        mixed = any(mine for *_, mine in group) and not all(mine for *_, mine in group)
-        if not mixed:
+        groups.append((group, gaps))
+    return groups
+
+
+def _is_conjunction(gap: str) -> bool:
+    text = gap.lower().replace("and/or", "or")
+    return bool(re.search(r"\band\b", text)) and not re.search(r"\bor\b|/", text)
+
+
+def _group_excused(
+    sentence: str, group: list[tuple[int, int, bool]], gaps: list[str]
+) -> bool:
+    segments: list[tuple[list[bool], bool]] = [([group[0][2]], False)]
+    for gap, span in zip(gaps, group[1:], strict=True):
+        if _is_conjunction(gap):
+            segments.append(([span[2]], False))
             continue
-        lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
-        if any(re.search(r"\bor\b|/", gap, re.I) for gap in gaps) or _LIST_LEAD.search(
-            lead
-        ):
-            return True
-    return False
+        members, has_or = segments[-1]
+        alternative = has_or or bool(re.search(r"\bor\b|/", gap, re.I))
+        segments[-1] = (members + [span[2]], alternative)
+    lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
+    for position, (members, has_or) in enumerate(segments):
+        if all(members):
+            continue
+        offered = has_or or (position == 0 and bool(_LIST_LEAD.search(lead)))
+        if not (any(members) and offered):
+            return False
+    return True
+
+
+def _offers_familiar_alternative(sentence: str) -> bool:
+    blocked_groups = [
+        (group, gaps)
+        for group, gaps in _language_groups(sentence)
+        if not all(mine for *_, mine in group)
+    ]
+    return bool(blocked_groups) and all(
+        _group_excused(sentence, group, gaps) for group, gaps in blocked_groups
+    )
 
 
 def _integration_only(clause: str) -> bool:

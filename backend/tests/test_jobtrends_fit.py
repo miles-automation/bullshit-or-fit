@@ -511,6 +511,18 @@ def test_rank_puts_untraceable_after_traceable_and_tags_it() -> None:
         ("Strong experience in Go (Golang) or Python.", False),
         ("Strong proficiency in Rust (or Python).", False),
         ("Strong experience with Python or with Rust.", False),
+        ("Must have Rust experience and Python or Java proficiency.", True),
+        ("Must have Go experience and Python or Java proficiency.", True),
+        (
+            "Hands-on production development in Go (Golang) or Rust and working Python proficiency.",
+            True,
+        ),
+        (
+            "Experience with Python or Go is helpful for the team, but you must have deep production Rust experience.",
+            True,
+        ),
+        ("Python, Go and Rust experience required.", True),
+        ("Experience with Python and/or Go in production.", False),
         ("Strong proficiency in Rust or proficiency in Python.", False),
         ("Strong Rust skills or Python skills required.", False),
         ("Strong experience in Python or C/C++ required.", False),
