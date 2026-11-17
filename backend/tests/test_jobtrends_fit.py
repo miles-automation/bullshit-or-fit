@@ -637,6 +637,8 @@ def test_learning_waiver_local_then_guarded(text: str, blocked: bool) -> None:
     [
         ("Willing to learn Python, but Rust experience is required.", True),
         ("Willing to learn Python and must have Go experience.", True),
+        ("Willing to learn Python but Rust experience is required.", True),
+        ("Willing to learn Java but Go experience is required.", True),
         ("Python backend. Willing to learn Rust and Go.", False),
         ("Python backend. Eager to learn modern Rust quickly.", False),
     ],

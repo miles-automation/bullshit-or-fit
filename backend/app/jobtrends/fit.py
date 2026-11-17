@@ -383,7 +383,14 @@ def _phrase_languages(body: str, cue: re.Match[str]) -> list[tuple[str, int, int
         gap = body[previous:start]
         if phrase and not _BARE_GAP.match(gap):
             break
-        if not phrase and not re.match(r"^\s+(?:[\w-]+\s+){0,2}$", gap):
+        if not phrase and (
+            not re.match(
+                r"^\s+(?:(?!(?:but|and|or|while|however|though)\b)[\w-]+\s+){0,2}$",
+                gap,
+                re.I,
+            )
+            or _MY_LANGUAGE.search(gap)
+        ):
             break
         phrase.append((language, start, stop))
         previous = stop
