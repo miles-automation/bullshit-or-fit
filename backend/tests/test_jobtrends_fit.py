@@ -4,6 +4,9 @@ import pytest
 
 from app.jobtrends.fit import (
     FitRole,
+    first_party_index,
+    is_traceable,
+    normalize_company,
     language_blocks,
     posting_fresh,
     clearance_status,
@@ -424,3 +427,76 @@ def test_posting_fresh_boundaries() -> None:
     assert posting_fresh(oldest, oldest)
     assert posting_fresh(oldest + timedelta(seconds=1), oldest)
     assert not posting_fresh(oldest - timedelta(seconds=1), oldest)
+
+
+POSITRON = (
+    "Strong Rust skills, or expert-level C/C++ skills and a willingness to work in Rust "
+    "day to day, along with proficiency in Python for tooling."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (POSITRON, True),
+        ("Must have Python and Rust experience, and AWS or Azure experience.", True),
+        (
+            "Strong Rust experience required, and experience with PostgreSQL or similar databases.",
+            True,
+        ),
+        ("Experience with Python, Go, or Java in production.", False),
+        (
+            "Strong backend skills in at least one production language, such as Go, Rust, Node.js or Python.",
+            False,
+        ),
+        (
+            "Service-oriented architectures in Go, Kotlin, or a comparable backend language.",
+            False,
+        ),
+        ("You will be developing using Golang/Python on high-traffic services.", False),
+        ("Strong Rust or Python experience required.", False),
+        (
+            "Write and operate production services in Python and Rust on AWS. Experience in or desire to learn Rust.",
+            False,
+        ),
+        (
+            "Strong expertise in Python and deep experience with C/C++ or other compiled languages.",
+            False,
+        ),
+        (
+            "Strong proficiency in Go required. We are happy to help you learn Kubernetes.",
+            True,
+        ),
+    ],
+)
+def test_language_alternatives_must_be_in_the_same_list(
+    text: str, blocked: bool
+) -> None:
+    assert language_blocks(text) is blocked
+
+
+def test_normalize_company_ignores_legal_suffixes() -> None:
+    assert normalize_company("Lyric, Inc.") == normalize_company("Lyric")
+    assert normalize_company("Bask Health") == "baskhealth"
+
+
+def test_is_traceable_only_checks_aggregator_rows() -> None:
+    index = first_party_index(
+        [("Lyric", "Staff Software Engineer"), ("Acme", "Backend Engineer")]
+    )
+    assert is_traceable("himalayas", "Lyric, Inc.", "Staff  Software Engineer", index)
+    assert not is_traceable("himalayas", "Lyric, Inc.", "Principal Engineer", index)
+    assert not is_traceable(
+        "himalayas", "Bask Health", "Senior Applied AI Engineer", index
+    )
+    assert is_traceable("ats", "Bask Health", "Anything", index)
+
+
+def test_rank_puts_untraceable_after_traceable_and_tags_it() -> None:
+    day = datetime(2026, 11, 17, tzinfo=UTC)
+    traced = _role(company_name="Traced", posted_at=day - timedelta(days=5))
+    untraced = _role(
+        company_name="Untraced", source="himalayas", posted_at=day, traceable=False
+    )
+    assert sorted([untraced, traced], key=rank_key) == [traced, untraced]
+    assert "[not on company site]" in format_fit_list([untraced], 1, now=day)

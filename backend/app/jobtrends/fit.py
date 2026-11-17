@@ -303,9 +303,14 @@ _SOFT_CUE = re.compile(
     r"|not required|optional|desirable|desired|helpful|advantageous|beneficial)\b",
     re.I,
 )
-_ALTERNATIVE = re.compile(r"\b(or|such as|one of|at least one|any of|either)\b", re.I)
 _ANY_LANGUAGE = re.compile(
-    r"\b(comparable|similar|equivalent|any modern|another)\b", re.I
+    r"\b(comparable|similar|equivalent|any modern|another|other)\s+"
+    r"(?:[\w-]+\s+){0,2}languages?\b",
+    re.I,
+)
+_LIST_GAP = re.compile(r"^\s*(?:,|/)?\s*(?:(?:or|and|and/or)\s+)?$", re.I)
+_LIST_LEAD = re.compile(
+    r"\b(such as|one of|at least one|any of|either)\b[^.;]{0,30}$", re.I
 )
 _WAIVER = re.compile(
     r"(\b(no|not|without)\b|n't\b)[^,;.]{0,40}\b(experience|required|necessary|needed|expected"
@@ -328,6 +333,62 @@ def _other_language_mentions(text: str) -> int:
     return len(_OTHER_LANGUAGE.findall(text)) + len(_GO.findall(text))
 
 
+def _learnable_languages(body: str) -> set[str]:
+    learnable: set[str] = set()
+    for m in re.finditer(r"\bto learn\b", body, re.I):
+        window = body[m.end() : m.end() + 40]
+        learnable.update(x.group(0).lower() for x in _OTHER_LANGUAGE.finditer(window))
+        if re.search(r"\b(?:Go|[Gg]olang)\b", window):
+            learnable.add("go")
+    return learnable
+
+
+def _neutralize_learnable(body: str) -> str:
+    for language in _learnable_languages(body):
+        if language in ("go", "golang"):
+            body = re.sub(r"\bGo\b|\b[Gg]olang\b", "LEARNABLE", body)
+        else:
+            body = re.sub(
+                r"(?<![\w+])" + re.escape(language) + r"(?![\w+])",
+                "LEARNABLE",
+                body,
+                flags=re.I,
+            )
+    return body
+
+
+def _language_spans(text: str) -> list[tuple[int, int, bool]]:
+    spans = [(m.start(), m.end(), False) for m in _OTHER_LANGUAGE.finditer(text)]
+    spans += [(m.start(), m.end(), False) for m in _GO.finditer(text)]
+    spans += [(m.start(), m.end(), True) for m in _MY_LANGUAGE.finditer(text)]
+    return sorted(spans)
+
+
+def _offers_familiar_alternative(sentence: str) -> bool:
+    spans = _language_spans(sentence)
+    index = 0
+    while index < len(spans):
+        group = [spans[index]]
+        gaps: list[str] = []
+        while index + 1 < len(spans):
+            gap = sentence[group[-1][1] : spans[index + 1][0]]
+            if not _LIST_GAP.match(gap):
+                break
+            gaps.append(gap)
+            index += 1
+            group.append(spans[index])
+        index += 1
+        mixed = any(mine for *_, mine in group) and not all(mine for *_, mine in group)
+        if not mixed:
+            continue
+        lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
+        if any(re.search(r"\bor\b|/", gap, re.I) for gap in gaps) or _LIST_LEAD.search(
+            lead
+        ):
+            return True
+    return False
+
+
 def _integration_only(clause: str) -> bool:
     for m in _INTEGRATION.finditer(clause):
         tail = clause[m.end() : m.end() + 40]
@@ -337,7 +398,7 @@ def _integration_only(clause: str) -> bool:
 
 
 def language_blocks(text: str | None) -> bool:
-    body = (text or "").replace("\u2019", "'")
+    body = _neutralize_learnable((text or "").replace("\u2019", "'"))
     mine = bool(_MY_LANGUAGE.search(body))
     marks = _soft_scope_marks(body)
     mandatory = 0
@@ -355,7 +416,7 @@ def language_blocks(text: str | None) -> bool:
             continue
         if _ANY_LANGUAGE.search(sentence):
             continue
-        if _MY_LANGUAGE.search(sentence) and _ALTERNATIVE.search(sentence):
+        if _offers_familiar_alternative(sentence):
             continue
         clauses = _COMMA.split(sentence)
         for index, clause in enumerate(clauses):
@@ -409,15 +470,48 @@ class FitRole:
     first_seen: datetime
     clearance: str | None = None
     posted_at: datetime | None = None
+    traceable: bool = True
 
     @property
     def listed_at(self) -> datetime:
         return self.posted_at or self.first_seen
 
 
-def rank_key(role: FitRole) -> tuple[int, float, int]:
+def rank_key(role: FitRole) -> tuple[int, int, float, int]:
     small = 0 if role.team_size is not None and role.team_size <= SMALL_TEAM else 1
-    return (small, -role.listed_at.timestamp(), -(role.comp_max or 0))
+    untraceable = 0 if role.traceable else 1
+    return (small, untraceable, -role.listed_at.timestamp(), -(role.comp_max or 0))
+
+
+FIRST_PARTY_SOURCES = (SOURCE_ATS, "commute_shed")
+_COMPANY_NOISE = re.compile(
+    r"\b(inc|llc|ltd|limited|corp|corporation|co|company|technologies|technology|the)\b"
+)
+
+
+def normalize_company(name: str) -> str:
+    text = name.lower().replace("&", " and ")
+    text = _COMPANY_NOISE.sub(" ", re.sub(r"[^a-z0-9&]+", " ", text))
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def normalize_title(title: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9+#]+", " ", title.lower()).split())
+
+
+def first_party_index(pairs: list[tuple[str, str]]) -> dict[str, set[str]]:
+    index: dict[str, set[str]] = {}
+    for company, title in pairs:
+        index.setdefault(normalize_company(company), set()).add(normalize_title(title))
+    return index
+
+
+def is_traceable(
+    source: str, company: str, title: str, index: dict[str, set[str]]
+) -> bool:
+    if source != SOURCE_HIMALAYAS:
+        return True
+    return normalize_title(title) in index.get(normalize_company(company), set())
 
 
 def fit_roles(
@@ -461,6 +555,16 @@ def fit_roles(
             or_(AtsJob.expires_at.is_(None), AtsJob.expires_at > moment),
         )
     ).all()
+    index = first_party_index(
+        [
+            (company, title)
+            for company, title in session.execute(
+                select(AtsJob.company_name, AtsJob.title).where(
+                    AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES)
+                )
+            ).all()
+        ]
+    )
     roles: dict[tuple[str, str, str | None], FitRole] = {}
     for r in rows:
         if not (
@@ -488,6 +592,7 @@ def fit_roles(
             first_seen=r.first_seen,
             clearance=clearance,
             posted_at=r.posted_at,
+            traceable=is_traceable(r.source, r.company_name, r.title, index),
         )
         key = (role.company_name.lower(), role.title.lower(), role.location)
         current = roles.get(key)
@@ -523,5 +628,7 @@ def format_fit_list(
             f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)}; {_age(r, moment)})"
         )
         tag = f" [clearance: {r.clearance}]" if r.clearance else ""
+        if not r.traceable:
+            tag += " [not on company site]"
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
     return "\n".join(lines)
