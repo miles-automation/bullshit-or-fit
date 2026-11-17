@@ -342,38 +342,52 @@ _LEARN_CUE = re.compile(
     re.I,
 )
 _LEARNABLE_TOKEN = "learnablelang"
-_LEARN_SUBAREA = re.compile(
-    r"\s*(?:'s\s+)?(?:internals|ecosystem|codebase|code base|tooling|runtime|compiler|"
-    r"libraries|frameworks|services|stack|source|standard library)\b",
+_LEARN_END = re.compile(
+    r"\s*(?:$|[.,;:!?)\n]|(?:and|or)\b|on the job\b|as needed\b|if needed\b|quickly\b"
+    r"|is a plus\b|a plus\b)",
     re.I,
 )
+_HARD_CUE = r"(?:must|required|requires|minimum|mandatory|\d+\+?\s*years?)"
+
+
+def _language_pattern(language: str) -> str:
+    if language in ("go", "golang"):
+        return r"(?:\bGo\b|\b[Gg]olang\b)"
+    return r"(?<![\w+])" + re.escape(language) + r"(?![\w+])"
+
+
+def _explicitly_required(body: str, language: str) -> bool:
+    lang = _language_pattern(language)
+    return bool(
+        re.search(_HARD_CUE + r"[^.;\n]{0,60}" + lang, body, re.I)
+        or re.search(
+            lang + r"[^.;\n]{0,40}\b(?:required|is a must|mandatory)\b", body, re.I
+        )
+    )
 
 
 def _learnable_languages(body: str) -> set[str]:
     learnable: set[str] = set()
     for m in _LEARN_CUE.finditer(body):
         window = re.split(r"[.;\n]", body[m.end() : m.end() + 30], maxsplit=1)[0]
-        tail = body[m.end() : m.end() + 60]
-        for x in _OTHER_LANGUAGE.finditer(window):
-            if not _LEARN_SUBAREA.match(tail[x.end() :]):
-                learnable.add(x.group(0).lower())
+        found = [
+            (x.group(0).lower(), x.end()) for x in _OTHER_LANGUAGE.finditer(window)
+        ]
         go = re.search(r"\b(?:Go|[Gg]olang)\b", window)
-        if go and not _LEARN_SUBAREA.match(tail[go.end() :]):
-            learnable.add("go")
+        if go:
+            found.append(("go", go.end()))
+        for language, stop in found:
+            if _LEARN_END.match(window[stop:]) and not _explicitly_required(
+                body, language
+            ):
+                learnable.add(language)
     return learnable
 
 
 def _neutralize_learnable(body: str) -> str:
     for language in _learnable_languages(body):
-        if language in ("go", "golang"):
-            body = re.sub(r"\bGo\b|\b[Gg]olang\b", _LEARNABLE_TOKEN, body)
-        else:
-            body = re.sub(
-                r"(?<![\w+])" + re.escape(language) + r"(?![\w+])",
-                _LEARNABLE_TOKEN,
-                body,
-                flags=re.I,
-            )
+        flags = 0 if language in ("go", "golang") else re.I
+        body = re.sub(_language_pattern(language), _LEARNABLE_TOKEN, body, flags=flags)
     return body
 
 

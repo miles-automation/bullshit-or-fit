@@ -574,3 +574,32 @@ def test_list_gap_is_linear_on_long_whitespace() -> None:
     start = time.perf_counter()
     language_blocks("Strong Rust" + " " * 20000 + "or Python experience required.")
     assert time.perf_counter() - start < 0.5
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (
+            "Must have 5 years of production Rust experience. Eager to learn Rust's advanced features.",
+            True,
+        ),
+        (
+            "Must have production Rust experience. Eager to learn Rust's async ecosystem.",
+            True,
+        ),
+        (
+            "Must have production Go experience. Willing to learn Go-specific tooling.",
+            True,
+        ),
+        ("Rust experience required. Desire to learn Rust is welcome too.", True),
+        ("Python backend. Happy to learn Go on the job.", False),
+        (
+            "Write and operate production services in Python and Rust on AWS. Experience in or desire to learn Rust.",
+            False,
+        ),
+    ],
+)
+def test_learning_waiver_respects_explicit_requirements(
+    text: str, blocked: bool
+) -> None:
+    assert language_blocks(text) is blocked
