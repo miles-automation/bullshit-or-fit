@@ -347,6 +347,7 @@ _LEARN_END = re.compile(
     r"|is a plus\b|a plus\b)",
     re.I,
 )
+_NEXT_BULLET = re.compile(r"\s+[A-Z][a-z]+\s+[a-z]")
 _HARD_CUE = r"(?:must|required|requires|minimum|mandatory|\d+\+?\s*years?)"
 
 
@@ -377,9 +378,9 @@ def _learnable_languages(body: str) -> set[str]:
         if go:
             found.append(("go", go.end()))
         for language, stop in found:
-            if _LEARN_END.match(window[stop:]) and not _explicitly_required(
-                body, language
-            ):
+            rest = body[m.end() + stop : m.end() + stop + 30]
+            ends = bool(_LEARN_END.match(rest) or _NEXT_BULLET.match(rest))
+            if ends and not _explicitly_required(body, language):
                 learnable.add(language)
     return learnable
 

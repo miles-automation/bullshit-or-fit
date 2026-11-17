@@ -594,6 +594,10 @@ def test_list_gap_is_linear_on_long_whitespace() -> None:
         ("Rust experience required. Desire to learn Rust is welcome too.", True),
         ("Python backend. Happy to learn Go on the job.", False),
         (
+            "Python and Rust services Experience in or desire to learn Rust Growth mindset and curiosity",
+            False,
+        ),
+        (
             "Write and operate production services in Python and Rust on AWS. Experience in or desire to learn Rust.",
             False,
         ),
