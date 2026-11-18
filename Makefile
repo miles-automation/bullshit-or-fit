@@ -52,7 +52,7 @@ TRACKER ?= ../../research/job-search/tracker.md
 
 fit-decisions-sync:
 	test -f "$(TRACKER)"
-	ssh $(PROD_HOST) docker exec -i -w /app $(INGEST_CONTAINER) .venv/bin/python -m app.jobtrends.cli fit-decisions-sync - < "$(TRACKER)"
+	ssh $(PROD_HOST) docker exec -i -w /app $(INGEST_CONTAINER) .venv/bin/python -m app.jobtrends.cli fit-decisions-sync $(SYNC_ARGS) - < "$(TRACKER)"
 
 build:
 	docker build --platform linux/amd64 -t ghcr.io/miles-automation/bullshit-or-fit:latest .

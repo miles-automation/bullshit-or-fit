@@ -4,9 +4,9 @@ from typing import Any
 
 import pytest
 
-from app.jobtrends.decisions import parse_tracker, resolve_rows
+from app.jobtrends.decisions import TrackerError, parse_tracker
 from app.jobtrends.fit import (
-    DecidedIndex,
+    build_decided_index,
     fit_roles,
     format_fit_list,
     normalize_company,
@@ -54,6 +54,15 @@ Unrelated paragraph.
             "https://www.fredrin.com/careers/senior-software-engineer/",
             "fredrin.com/careers/senior-software-engineer",
         ),
+        (
+            "https://boards.greenhouse.io/embed/job_app?for=acme&token=123",
+            "greenhouse:123",
+        ),
+        (
+            "https://boards.greenhouse.io/embed/job_app?for=other&token=456",
+            "greenhouse:456",
+        ),
+        ("https://[invalid/jobs", None),
         (None, None),
         ("", None),
         ("none", None),
@@ -82,55 +91,79 @@ def test_parse_tracker_ignores_text_without_a_table() -> None:
     assert parse_tracker("# Tracker\n\nnothing yet\n") == []
 
 
-def test_resolve_rows_uses_the_stored_posting_title() -> None:
-    rows = parse_tracker(TRACKER)
-    jobs = [
-        (
-            "Ramp",
-            "Senior Software Engineer | Product Foundations",
-            "https://jobs.ashbyhq.com/ramp/a9cb5fd3-1acb-474e-ab7c-b811eeb5b0c2",
-        ),
-        ("Other", "Engineer", None),
-    ]
-    resolved = resolve_rows(rows, jobs)
-    assert resolved[0][1:] == (
-        "Ramp",
-        "Senior Software Engineer | Product Foundations",
-        True,
+def test_parse_tracker_rejects_a_truncated_row() -> None:
+    text = TRACKER.replace(
+        "| NoLink | Staff Engineer | none | n/a | drafting | |", "| NoLink | Staff"
     )
-    assert resolved[1][1:] == ("Reddit", "Senior SWE, DevX", False)
+    with pytest.raises(TrackerError, match="cells"):
+        parse_tracker(text)
 
 
-def _index(*rows: tuple[str, str, str | None]) -> DecidedIndex:
-    keys = {url_key(url) for _, _, url in rows}
-    return DecidedIndex(
-        url_keys=frozenset(k for k in keys if k),
-        roles=frozenset((normalize_company(c), normalize_title(t)) for c, t, _ in rows),
+def test_parse_tracker_rejects_a_table_without_required_columns() -> None:
+    text = (
+        TRACKER
+        + "\n| Company | Title | Link | Status |\n|---|---|---|---|\n| A | B | none | skipped |\n"
     )
+    with pytest.raises(TrackerError, match="role"):
+        parse_tracker(text)
+
+
+def test_parse_tracker_rejects_a_row_without_status() -> None:
+    text = TRACKER.replace("| drafting |", "|  |")
+    with pytest.raises(TrackerError, match="required"):
+        parse_tracker(text)
+
+
+def test_parse_tracker_handles_escaped_pipes_and_autolinks() -> None:
+    text = (
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        "| Acme | Senior SWE \\| Platform | <https://www.fredrin.com/careers/x/> | skipped |\n"
+    )
+    [row] = parse_tracker(text)
+    assert row.title == "Senior SWE | Platform"
+    assert row.url == "https://www.fredrin.com/careers/x/"
+    assert url_key(row.url) == "fredrin.com/careers/x"
+
+
+def _decision(url: str | None, company: str, title: str) -> tuple[str | None, str, str]:
+    return (url_key(url), normalize_company(company), normalize_title(title))
+
+
+RAMP = "https://jobs.ashbyhq.com/ramp/a9cb5fd3-1acb-474e-ab7c-b811eeb5b0c2"
+OTHER_ASHBY = "https://jobs.ashbyhq.com/acme/0b5e2a1c-1111-2222-3333-444455556666"
 
 
 def test_decided_index_matches_by_link() -> None:
-    index = _index(
-        (
-            "Ramp",
-            "Senior SWE",
-            "https://jobs.ashbyhq.com/ramp/a9cb5fd3-1acb-474e-ab7c-b811eeb5b0c2",
-        )
-    )
+    index = build_decided_index([_decision(RAMP, "Ramp", "Senior SWE")], [])
     assert index.covers(
         "Ramp Business Corp",
         "Senior Software Engineer, Product Foundations",
-        "https://jobs.ashbyhq.com/ramp/a9cb5fd3-1acb-474e-ab7c-b811eeb5b0c2/application",
+        RAMP + "/application",
+    )
+
+
+def test_decided_index_matches_a_copy_through_the_stored_posting() -> None:
+    index = build_decided_index(
+        [_decision(RAMP, "Ramp", "Senior SWE, Product Foundations")],
+        [("Ramp", "Senior Software Engineer | Product Foundations", RAMP)],
+    )
+    assert index.covers(
+        "Ramp",
+        "Senior Software Engineer | Product Foundations",
+        "https://himalayas.app/companies/ramp/jobs/senior-software-engineer",
     )
 
 
 def test_decided_index_matches_same_role_from_another_source() -> None:
-    index = _index(
-        (
-            "DataGrail",
-            "Staff Software Engineer",
-            "https://jobs.lever.co/datagrail/0b5e2a1c-1111-2222-3333-444455556666",
-        )
+    index = build_decided_index(
+        [
+            _decision(
+                "https://datagrail.io/careers/staff",
+                "DataGrail",
+                "Staff Software Engineer",
+            )
+        ],
+        [],
     )
     assert index.covers(
         "DataGrail, Inc.",
@@ -139,8 +172,23 @@ def test_decided_index_matches_same_role_from_another_source() -> None:
     )
 
 
+def test_decided_index_keeps_a_distinct_requisition_with_the_same_title() -> None:
+    index = build_decided_index(
+        [_decision(RAMP, "Acme", "Senior Software Engineer")],
+        [("Acme", "Senior Software Engineer", RAMP)],
+    )
+    assert not index.covers("Acme", "Senior Software Engineer", OTHER_ASHBY)
+    assert index.covers(
+        "Acme",
+        "Senior Software Engineer",
+        "https://himalayas.app/companies/acme/jobs/sse",
+    )
+
+
 def test_decided_index_keeps_a_different_level_at_the_same_company() -> None:
-    index = _index(("Twilio", "Staff Software Engineer", "https://x.test/1"))
+    index = build_decided_index(
+        [_decision("https://x.test/1", "Twilio", "Staff Software Engineer")], []
+    )
     assert not index.covers("Twilio", "Senior Software Engineer", "https://x.test/2")
     assert not index.covers("Twilio", "Principal Software Engineer", None)
 
@@ -183,28 +231,27 @@ def _job(**kw: Any) -> SimpleNamespace:  # noqa: ANN401
     return SimpleNamespace(**base)
 
 
-def _decision(url: str | None, company: str, title: str) -> SimpleNamespace:
-    return SimpleNamespace(
-        url_key=url_key(url),
-        company_key=normalize_company(company),
-        title_key=normalize_title(title),
-    )
+def _posting(job: SimpleNamespace) -> SimpleNamespace:
+    return SimpleNamespace(company_name=job.company_name, title=job.title, url=job.url)
+
+
+def _stored(url: str | None, company: str, title: str) -> SimpleNamespace:
+    key, company_key, title_key = _decision(url, company, title)
+    return SimpleNamespace(url_key=key, company_key=company_key, title_key=title_key)
 
 
 def test_fit_roles_hides_decided_roles_and_their_copies() -> None:
     ats = _job()
     copy = _job(
         source="himalayas",
+        location="Remote - United States",
         url="https://himalayas.app/companies/acme/jobs/senior-software-engineer",
     )
-    other = _job(
-        title="Staff Software Engineer",
-        url="https://jobs.ashbyhq.com/acme/0b5e2a1c-1111-2222-3333-444455556666",
-    )
+    other = _job(title="Staff Software Engineer", url=OTHER_ASHBY)
     session = _Session(
         [ats, copy, other],
-        [("Acme", "Senior Software Engineer"), ("Acme", "Staff Software Engineer")],
-        [_decision(ats.url, "Acme", "Senior SWE")],
+        [_posting(ats), _posting(other)],
+        [_stored(ats.url, "Acme", "Senior SWE")],
     )
     result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
     assert [r.title for r in result.roles] == ["Staff Software Engineer"]
@@ -219,8 +266,8 @@ def test_fit_roles_hides_a_whole_group_when_one_copy_matches() -> None:
     ats = _job()
     session = _Session(
         [copy, ats],
-        [("Acme", "Senior Software Engineer")],
-        [_decision(ats.url, "Ramp", "Unrelated title")],
+        [_posting(ats)],
+        [_stored(ats.url, "Ramp", "Unrelated title")],
     )
     result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
     assert result.roles == []
@@ -230,11 +277,12 @@ def test_fit_roles_hides_a_whole_group_when_one_copy_matches() -> None:
 def test_format_fit_list_reports_hidden_roles() -> None:
     assert format_fit_list([], 1, hidden=2) == (
         "no new fitting roles in the last 1 day(s)\n"
-        "hidden: 2 roles already applied to or skipped"
+        "hidden: 2 roles already in the application tracker"
     )
+    job = _job()
     result = fit_roles(
-        _Session([_job()], [("Acme", "Senior Software Engineer")], []),  # type: ignore[arg-type]
+        _Session([job], [_posting(job)], []),  # type: ignore[arg-type]
         now=NOW,
     )
-    text = format_fit_list(result.roles, 1, now=NOW, hidden=1)
-    assert text.endswith("\n\nhidden: 1 role already applied to or skipped")
+    text = format_fit_list(result.roles, 1, now=NOW, hidden=result.hidden)
+    assert text.endswith("\n\nhidden: 0 roles already in the application tracker")

@@ -240,19 +240,21 @@ def _cmd_fit(days: int, max_age: int) -> int:
     return 0
 
 
-def _cmd_fit_decisions_sync(path: str) -> int:
-    from app.jobtrends.decisions import parse_tracker, sync_decisions
+def _cmd_fit_decisions_sync(path: str, allow_removals: bool) -> int:
+    from app.jobtrends.decisions import TrackerError, parse_tracker, sync_decisions
 
     text = sys.stdin.read() if path == "-" else Path(path).read_text()
-    rows = parse_tracker(text)
-    if not rows:
-        print("fit-decisions-sync: no tracker rows found, nothing changed")  # noqa: T201
+    try:
+        rows = parse_tracker(text)
+        if not rows:
+            raise TrackerError("no tracker rows found")
+        with SessionLocal() as session:
+            summary = sync_decisions(session, rows, allow_removals=allow_removals)
+    except TrackerError as exc:
+        print(f"fit-decisions-sync: {exc}; nothing changed", file=sys.stderr)  # noqa: T201
         return 1
-    with SessionLocal() as session:
-        summary = sync_decisions(session, rows)
     print(  # noqa: T201
-        f"fit decisions: {summary.total} synced, "
-        f"{summary.resolved} matched to a stored posting"
+        f"fit decisions: {summary.total} synced, {summary.removed} removed"
     )
     return 0
 
@@ -303,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
         help="replace applied/skipped roles with the rows of a tracker table",
     )
     p_sync.add_argument("path", help="tracker markdown file, or - for stdin")
+    p_sync.add_argument("--allow-removals", action="store_true")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -348,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "fit":
         return _cmd_fit(args.days, args.max_age)
     if args.cmd == "fit-decisions-sync":
-        return _cmd_fit_decisions_sync(args.path)
+        return _cmd_fit_decisions_sync(args.path, args.allow_removals)
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

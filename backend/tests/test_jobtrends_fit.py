@@ -114,7 +114,10 @@ def test_format_fit_list() -> None:
         "Acme, 12 people: Senior Software Engineer (Remote - US; $150k-$200k; first seen"
         in text
     )
-    assert format_fit_list([], 3) == "no new fitting roles in the last 3 day(s)"
+    assert format_fit_list([], 3) == (
+        "no new fitting roles in the last 3 day(s)\n"
+        "hidden: 0 roles already in the application tracker"
+    )
 
 
 @pytest.mark.parametrize(

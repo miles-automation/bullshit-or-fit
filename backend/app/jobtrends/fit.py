@@ -662,23 +662,31 @@ def is_traceable(
 _GREENHOUSE_JOB = re.compile(r"/jobs/(\d+)")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _APPLY_SUFFIX = re.compile(r"/(?:application|apply)$")
+PROVIDER_KEY_PREFIXES = ("greenhouse:", "ashby:", "lever:")
 
 
 def url_key(url: str | None) -> str | None:
     if not url or not url.strip():
         return None
-    parts = urlsplit(url.strip())
-    host = parts.netloc.lower().removeprefix("www.")
+    try:
+        parts = urlsplit(url.strip())
+        host = parts.netloc.lower().removeprefix("www.")
+        query = parse_qs(parts.query)
+    except ValueError:
+        return None
     if not host:
         return None
     path = parts.path.lower()
-    gh_jid = parse_qs(parts.query).get("gh_jid")
+    gh_jid = query.get("gh_jid")
     if gh_jid:
         return f"greenhouse:{gh_jid[0]}"
     if host.endswith("greenhouse.io"):
         match = _GREENHOUSE_JOB.search(path)
         if match:
             return f"greenhouse:{match.group(1)}"
+        token = query.get("token")
+        if token and token[0].isdigit():
+            return f"greenhouse:{token[0]}"
     for suffix, provider in (("ashbyhq.com", "ashby"), ("lever.co", "lever")):
         if host.endswith(suffix):
             match = _UUID.search(path)
@@ -687,25 +695,46 @@ def url_key(url: str | None) -> str | None:
     return host + _APPLY_SUFFIX.sub("", path.rstrip("/"))
 
 
+def is_provider_key(key: str | None) -> bool:
+    return key is not None and key.startswith(PROVIDER_KEY_PREFIXES)
+
+
 @dataclass(frozen=True)
 class DecidedIndex:
     url_keys: frozenset[str] = frozenset()
     roles: frozenset[tuple[str, str]] = frozenset()
+    requisition_roles: frozenset[tuple[str, str]] = frozenset()
 
     def covers(self, company: str, title: str, url: str | None) -> bool:
         key = url_key(url)
         if key is not None and key in self.url_keys:
             return True
-        return (normalize_company(company), normalize_title(title)) in self.roles
+        role = (normalize_company(company), normalize_title(title))
+        if role in self.roles:
+            return True
+        return role in self.requisition_roles and not is_provider_key(key)
 
 
-def decided_index(session: Session) -> DecidedIndex:
-    rows = session.execute(
-        select(FitDecision.url_key, FitDecision.company_key, FitDecision.title_key)
-    ).all()
+def build_decided_index(
+    decisions: list[tuple[str | None, str, str]],
+    postings: list[tuple[str, str, str | None]],
+) -> DecidedIndex:
+    keys = frozenset(key for key, _, _ in decisions if key)
+    roles: set[tuple[str, str]] = set()
+    requisition_roles: set[tuple[str, str]] = set()
+    for key, company_key, title_key in decisions:
+        target = requisition_roles if is_provider_key(key) else roles
+        target.add((company_key, title_key))
+    for company, title, url in postings:
+        key = url_key(url)
+        if key is not None and key in keys:
+            role = (normalize_company(company), normalize_title(title))
+            target = requisition_roles if is_provider_key(key) else roles
+            target.add(role)
     return DecidedIndex(
-        url_keys=frozenset(r.url_key for r in rows if r.url_key),
-        roles=frozenset((r.company_key, r.title_key) for r in rows),
+        url_keys=keys,
+        roles=frozenset(roles),
+        requisition_roles=frozenset(requisition_roles),
     )
 
 
@@ -756,19 +785,29 @@ def fit_roles(
             or_(AtsJob.expires_at.is_(None), AtsJob.expires_at > moment),
         )
     ).all()
-    index = first_party_index(
+    postings = [
+        (r.company_name, r.title, r.url)
+        for r in session.execute(
+            select(AtsJob.company_name, AtsJob.title, AtsJob.url).where(
+                AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES)
+            )
+        ).all()
+    ]
+    index = first_party_index([(company, title) for company, title, _ in postings])
+    decided = build_decided_index(
         [
-            (company, title)
-            for company, title in session.execute(
-                select(AtsJob.company_name, AtsJob.title).where(
-                    AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES)
+            (r.url_key, r.company_key, r.title_key)
+            for r in session.execute(
+                select(
+                    FitDecision.url_key, FitDecision.company_key, FitDecision.title_key
                 )
             ).all()
-        ]
+        ],
+        postings,
     )
-    decided = decided_index(session)
     roles: dict[tuple[str, str, str | None], FitRole] = {}
     hidden: set[tuple[str, str, str | None]] = set()
+    hidden_roles: set[tuple[str, str]] = set()
     for r in rows:
         if not (
             title_fits(r.title)
@@ -786,6 +825,9 @@ def fit_roles(
         key = (r.company_name.lower(), r.title.lower(), r.location)
         if decided.covers(r.company_name, r.title, r.url):
             hidden.add(key)
+            hidden_roles.add(
+                (normalize_company(r.company_name), normalize_title(r.title))
+            )
             continue
         role = FitRole(
             source=r.source,
@@ -808,7 +850,7 @@ def fit_roles(
         roles=sorted(
             (role for key, role in roles.items() if key not in hidden), key=rank_key
         ),
-        hidden=len(hidden),
+        hidden=len(hidden_roles),
     )
 
 
@@ -828,7 +870,7 @@ def _age(role: FitRole, now: datetime) -> str:
 
 def _hidden_line(hidden: int) -> str:
     noun = "role" if hidden == 1 else "roles"
-    return f"hidden: {hidden} {noun} already applied to or skipped"
+    return f"hidden: {hidden} {noun} already in the application tracker"
 
 
 def format_fit_list(
@@ -836,8 +878,7 @@ def format_fit_list(
 ) -> str:
     moment = now or datetime.now(tz=UTC)
     if not roles:
-        empty = f"no new fitting roles in the last {days} day(s)"
-        return f"{empty}\n{_hidden_line(hidden)}" if hidden else empty
+        return f"no new fitting roles in the last {days} day(s)\n{_hidden_line(hidden)}"
     lines = [f"{len(roles)} new fitting roles in the last {days} day(s)", ""]
     for r in roles:
         size = f", {r.team_size} people" if r.team_size is not None else ""
@@ -848,6 +889,5 @@ def format_fit_list(
         if not r.traceable:
             tag += " [not on company site]"
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
-    if hidden:
-        lines.extend(["", _hidden_line(hidden)])
+    lines.extend(["", _hidden_line(hidden)])
     return "\n".join(lines)
