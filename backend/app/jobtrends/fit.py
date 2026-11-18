@@ -867,16 +867,16 @@ def fit_roles(
         for r in [*first_party, *rows]
     ]
     index = first_party_index([(r.company_name, r.title) for r in first_party])
-    official: dict[tuple[str, str], tuple[str, datetime | None]] = {}
+    same_title: dict[tuple[str, str], dict[str, datetime | None]] = {}
     for r in first_party:
-        if not r.url:
-            continue
-        role_key = (normalize_company(r.company_name), normalize_title(r.title))
-        best = official.get(role_key)
-        if best is None or (
-            best[1] is not None and (r.posted_at is None or r.posted_at > best[1])
-        ):
-            official[role_key] = (r.url, r.posted_at)
+        if r.url:
+            role_key = (normalize_company(r.company_name), normalize_title(r.title))
+            same_title.setdefault(role_key, {})[r.url] = r.posted_at
+    official = {
+        role_key: next(iter(urls.items()))
+        for role_key, urls in same_title.items()
+        if len(urls) == 1
+    }
     decision_rows = session.execute(
         select(
             FitDecision.url_key,

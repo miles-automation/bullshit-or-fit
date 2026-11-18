@@ -25,6 +25,17 @@ def _client(api_key: str | None, base_url: str | None) -> httpx.Client:
     )
 
 
+PRIVATE_KEYS = frozenset({"evidence"})
+
+
+def scrub(value: Any) -> Any:  # noqa: ANN401
+    if isinstance(value, dict):
+        return {k: scrub(v) for k, v in value.items() if k not in PRIVATE_KEYS}
+    if isinstance(value, list):
+        return [scrub(v) for v in value]
+    return value
+
+
 def summary_line(document: dict[str, Any]) -> str:
     roles = document.get("roles") or document.get("shortlist") or []
     head = (
@@ -50,6 +61,7 @@ def publish(
     client: httpx.Client | None = None,
 ) -> int:
     http = client or _client(api_key, base_url)
+    document = scrub(document)
     response = http.post(
         f"/api/v1/tasks/{task_id}/comments",
         json={
@@ -64,6 +76,29 @@ def publish(
     return int(response.json()["id"])
 
 
+def _scan(
+    http: httpx.Client, task_id: int, schema: str, *, kinds: bool
+) -> list[dict[str, Any]]:
+    found: dict[int, dict[str, Any]] = {}
+    after: int | None = None
+    while True:
+        params: dict[str, Any] = {"limit": PAGE_SIZE}
+        if kinds:
+            params["kinds"] = schema
+        if after is not None:
+            params["after_comment_id"] = after
+        response = http.get(f"/api/v1/tasks/{task_id}/comments", params=params)
+        if response.status_code != 200:
+            raise FeedError(f"read failed: HTTP {response.status_code}")
+        page = response.json().get("comments", [])
+        for c in page:
+            if (c.get("comment_metadata") or {}).get("schema") == schema:
+                found[int(c["id"])] = c
+        if len(page) < PAGE_SIZE:
+            return list(found.values())
+        after = max(int(c["id"]) for c in page)
+
+
 def latest(
     task_id: int,
     schema: str,
@@ -73,22 +108,9 @@ def latest(
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     http = client or _client(api_key, base_url)
-    matches: list[dict[str, Any]] = []
-    after: int | None = None
-    while True:
-        params: dict[str, Any] = {"limit": PAGE_SIZE, "kinds": schema}
-        if after is not None:
-            params["after_comment_id"] = after
-        response = http.get(f"/api/v1/tasks/{task_id}/comments", params=params)
-        if response.status_code != 200:
-            raise FeedError(f"read failed: HTTP {response.status_code}")
-        page = response.json().get("comments", [])
-        matches.extend(
-            c for c in page if (c.get("comment_metadata") or {}).get("schema") == schema
-        )
-        if len(page) < PAGE_SIZE:
-            break
-        after = max(int(c["id"]) for c in page)
+    matches = _scan(http, task_id, schema, kinds=True) or _scan(
+        http, task_id, schema, kinds=False
+    )
     if not matches:
         raise FeedError(f"no {schema} document on task {task_id}")
     newest = max(matches, key=lambda c: (c["created_at"], c["id"]))

@@ -15,6 +15,7 @@ from app.jobtrends.fit import (
     ACTIVE_APPLICATION_STATUSES,
     build_decided_index,
     company_id,
+    is_provider_key,
     normalize_company,
     normalize_title,
     posting_keys,
@@ -60,10 +61,15 @@ class Feedback:
 
 
 def feedback_id(
-    role_id: str | None, company: str, decision: str, reason: str, author: str
+    role_id: str | None,
+    company: str,
+    decision: str,
+    reason: str,
+    author: str,
+    url: str | None = None,
 ) -> str:
     raw = json.dumps(
-        [role_id, company, decision, reason.strip(), author], sort_keys=True
+        [role_id, company, decision, reason.strip(), author, url], sort_keys=True
     )
     return "fb_" + hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -85,7 +91,9 @@ def _read_jsonl(path: Path, schema: str) -> list[tuple[int, dict[str, Any]]]:
     return records
 
 
-_QUOTE = re.compile(r"[\"\u201c\u201d]")
+_QUOTE = re.compile(
+    r"[\"\u201c]([^\"\u201c\u201d]*[A-Za-z][^\"\u201c\u201d]*)[\"\u201d]"
+)
 MIN_EVIDENCE = 12
 
 
@@ -105,12 +113,14 @@ def _validate(r: dict[str, Any], where: str, kind: str) -> Feedback:
         raise RecordError(f"{where}: author, reason and created_at are required")
     evidence = (r.get("evidence") or "").strip() or None
     if kind == OWNER and author != OWNER_AUTHOR:
-        if not evidence or len(evidence) < MIN_EVIDENCE or not _QUOTE.search(evidence):
+        quoted = _QUOTE.search(evidence or "")
+        if not evidence or len(evidence) < MIN_EVIDENCE or not quoted:
             raise RecordError(
                 f"{where}: owner feedback written by {author} needs the owner's quoted words in evidence"
             )
     return Feedback(
-        id=r.get("id") or feedback_id(role, company, decision, reason, author),
+        id=r.get("id")
+        or feedback_id(role, company, decision, reason, author, r.get("url")),
         role_id=role,
         company_id=company,
         source=r.get("source") or "unknown",
@@ -158,7 +168,7 @@ def append_feedback(
             f"author {OWNER_AUTHOR!r} is reserved for Rich's own edits; use your agent name"
         )
     path = directory / (OWNER_FILE if kind == OWNER else AGENT_FILE)
-    record_id = feedback_id(role_id, company, decision, reason, author)
+    record_id = feedback_id(role_id, company, decision, reason, author.strip(), url)
     record = {
         "schema": FEEDBACK_SCHEMA,
         "id": record_id,
@@ -178,7 +188,12 @@ def append_feedback(
         fcntl.flock(handle, fcntl.LOCK_EX)
         handle.seek(0)
         text = handle.read()
-        if record_id in {f.id for f in _feedback(path, kind)}:
+        target = role_id or company
+        same_target = [
+            f for f in _feedback(path, kind) if (f.role_id or f.company_id) == target
+        ]
+        newest = max(same_target, key=lambda f: f.created_at, default=None)
+        if newest is not None and newest.id == record_id:
             return record_id, False
         if text and not text.endswith("\n"):
             handle.write("\n")
@@ -286,7 +301,8 @@ def shortlist(
     for f in sorted(feedback, key=lambda f: f.created_at):
         if f.author_kind == OWNER and f.decision in {"skip_role", "good_fit"}:
             for key in posting_keys(f.url):
-                owner_by_url[key] = f
+                if is_provider_key(key):
+                    owner_by_url[key] = f
     owner_by_target: dict[str, list[Feedback]] = {}
     by_role: dict[str, list[Feedback]] = {}
     for f in feedback:
@@ -437,10 +453,22 @@ def format_morning(document: dict[str, Any]) -> str:
         f"held (active application or another role at the company): {len(document['held'])}; "
         f"suppressed: {len(document['suppressed'])}; not strong enough: {document['not_strong']}"
     )
-    for h in document["held"]:
-        lines.append(f"  held: {h['company_name']}: {h['title']} ({h['reason']})")
-    for s in document["suppressed"]:
-        lines.append(f"  suppressed: {s['company_name']}: {s['title']} ({s['reason']})")
+    for label, items in (
+        ("held", document["held"]),
+        ("suppressed", document["suppressed"]),
+    ):
+        for item in items:
+            lines.append(
+                f"  {label}: {item['company_name']}: {item['title']} ({item['reason']})"
+            )
+            for s in item.get("agent_suggestions", []):
+                lines.append(
+                    f"    agent suggestion (not applied): {s['author']} {s['decision']}: {s['reason']}"
+                )
+            for s in item.get("superseded_suggestions", []):
+                lines.append(
+                    f"    agent suggestion superseded by owner feedback {s['superseded_by']}: {s['reason']}"
+                )
     return "\n".join(lines)
 
 
@@ -516,17 +544,25 @@ def draftable(claim: Claim) -> bool:
     return claim.verification == "verified" and not claim.confidential
 
 
-_FIGURE = re.compile(r"\d[\d,.]*\s*(?:%|x|k|m|b|gb|ms|s)?\b", re.I)
+_FIGURE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|k|m|b)?(?![a-z])", re.I
+)
+_SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}
 
 
-def _figures(text: str) -> set[str]:
-    return {
-        f.replace(" ", "").lower() for f in _FIGURE.findall(text) if len(f.strip()) >= 2
-    }
+def _figures(text: str) -> set[float]:
+    values: set[float] = set()
+    for number, unit in _FIGURE.findall(text):
+        value = float(number.replace(",", "")) * _SCALE.get(unit.lower(), 1)
+        if value >= 10:
+            values.add(round(value, 6))
+    return values
 
 
 def usable_answers(answers: list[Answer], claims: list[Claim]) -> list[Answer]:
-    held = set().union(*[_figures(c.text) for c in claims if not draftable(c)])
+    held: set[float] = set().union(
+        *[_figures(c.text) for c in claims if not draftable(c)]
+    )
     return [
         a
         for a in answers

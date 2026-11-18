@@ -621,3 +621,119 @@ def test_mail_status_reads_escaped_pipes() -> None:
     items = mail_status(LOG + row, ["Acme"])
     assert items[-1]["source_ref"] == "INBOX:2300"
     assert items[-1]["kind"] == "possible_human_reply"
+
+
+def test_unmatched_quote_is_not_owner_evidence(tmp_path: Path) -> None:
+    with pytest.raises(RecordError, match="quoted words"):
+        _fb(tmp_path, evidence='I think Rich would say " skip this company')
+    _fb(tmp_path, evidence="Rich, chat: “skip it”")
+
+
+def test_publish_scrubs_evidence_from_any_document() -> None:
+    store: list[dict[str, Any]] = []
+    client = httpx.Client(
+        base_url="https://ss.test",
+        headers={"X-API-Key": "k"},
+        transport=_transport(store),
+    )
+    old = {
+        "schema": "bof.morning/v1",
+        "shortlist": [
+            {"owner_notes": [{"id": "x", "reason": "r", "evidence": "secret"}]}
+        ],
+    }
+    publish(old, 5, author="claude-code", client=client)
+    assert "secret" not in json.dumps(store)
+    assert store[0]["comment_metadata"]["kind"] == "bof.morning/v1"
+
+
+def test_feedback_dedupe_only_against_the_newest_record_for_the_target(
+    tmp_path: Path,
+) -> None:
+    first, added = _fb(tmp_path)
+    assert added
+    assert _fb(tmp_path)[1] is False
+    with_url = _fb(tmp_path, url="https://job-boards.greenhouse.io/acme/jobs/1")
+    assert with_url[1] is True and with_url[0] != first
+    _fb(
+        tmp_path,
+        decision="good_fit",
+        reason="changed my mind",
+        now=datetime(2026, 11, 18, 15, tzinfo=UTC),
+    )
+    again = _fb(tmp_path, now=datetime(2026, 11, 18, 16, tzinfo=UTC))
+    assert again[1] is True
+    morning = shortlist(_export(_role()), [], load_feedback(tmp_path))
+    assert morning.shortlist == []
+
+
+def test_generic_careers_url_skip_does_not_hide_other_roles(tmp_path: Path) -> None:
+    careers = "https://acme.example/careers"
+    _fb(tmp_path, role_id="r-a", url=careers)
+    roles = [_role(role_id="r-b", official_url=careers, url=careers)]
+    morning = shortlist(_export(*roles), [], load_feedback(tmp_path))
+    assert [r["role_id"] for r in morning.shortlist] == ["r-b"]
+
+
+def test_reformatted_held_figures_still_block_answers(tmp_path: Path) -> None:
+    claims = load_claims(
+        _write(
+            tmp_path / "claims.jsonl",
+            [{**CLAIMS[1], "text": "Saved $1.2M a year."}],
+        )
+    )
+    answers = load_answers(
+        _write(
+            tmp_path / "answers.jsonl",
+            [
+                {**ANSWERS[0], "id": "a-big", "text": "That saved $1,200,000."},
+                ANSWERS[0],
+            ],
+        )
+    )
+    role = _export(_role())["roles"][0]
+    text = build_packet(
+        role, None, claims, answers, tmp_path / "p", now=NOW
+    ).read_text()
+    voice = text.split("## Voice and approved wording")[1].split("## Sent")[0]
+    assert "a-big" not in voice and "[a-own]" in voice
+
+
+def test_latest_falls_back_to_documents_without_a_kind() -> None:
+    comments = [
+        {
+            "id": 7,
+            "body": "old",
+            "created_at": "2026-11-18T00:00:00Z",
+            "comment_metadata": {"schema": EXPORT_SCHEMA, "n": 7},
+        }
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        wanted = request.url.params.get("kinds")
+        page = [
+            c
+            for c in comments
+            if not wanted or c["comment_metadata"].get("kind") == wanted
+        ]
+        return httpx.Response(200, json={"comments": page, "total": len(page)})
+
+    client = httpx.Client(
+        base_url="https://ss.test", transport=httpx.MockTransport(handler)
+    )
+    assert latest(5, EXPORT_SCHEMA, client=client)["document"]["n"] == 7
+
+
+def test_text_output_shows_suggestions_on_held_roles(tmp_path: Path) -> None:
+    from app.jobtrends.morning import format_morning
+
+    _fb(tmp_path, kind=AGENT, decision="note", reason="maybe later", evidence=None)
+    tracker = parse_tracker(
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        "| Acme | Other | none | submitted |\n"
+    )
+    morning = shortlist(_export(_role()), tracker, load_feedback(tmp_path))
+    text = format_morning(
+        morning_document(morning, _export(_role()), source={}, now=NOW)
+    )
+    assert "    agent suggestion (not applied): claude-code note: maybe later" in text

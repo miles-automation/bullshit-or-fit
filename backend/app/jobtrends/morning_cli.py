@@ -48,9 +48,11 @@ def _cmd_latest(args: argparse.Namespace) -> int:
     payload = json.dumps(found, indent=2)
     if args.out:
         target = Path(args.out)
-        if target.exists() and not args.force:
-            raise RecordError(f"{target} exists; pass --force to replace it")
-        target.write_text(payload)
+        try:
+            with target.open("w" if args.force else "x") as handle:
+                handle.write(payload)
+        except FileExistsError as exc:
+            raise RecordError(f"{target} exists; pass --force to replace it") from exc
         print(  # noqa: T201
             f"wrote comment {found['comment_id']} ({found['posted_at']}, by {found['posted_by']}) to {args.out}"
         )
@@ -70,6 +72,21 @@ def _export(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         "task": args.feed_task,
         "comment_id": found["comment_id"],
     }
+
+
+def _write_new(folder: Path, stem: str, text: str) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    for n in range(1000):
+        path = folder / (
+            f"{stem}-morning.json" if n == 0 else f"{stem}-{n}-morning.json"
+        )
+        try:
+            with path.open("x") as handle:
+                handle.write(text)
+            return path
+        except FileExistsError:
+            continue
+    raise RecordError(f"could not create a run record in {folder}")
 
 
 def _cmd_morning(args: argparse.Namespace) -> int:
@@ -93,9 +110,11 @@ def _cmd_morning(args: argparse.Namespace) -> int:
             now=now,
         )
         document["packet"] = str(packet.relative_to(home))
-    out = home / "runs" / f"{now.strftime('%Y-%m-%dT%H%M%SZ')}-morning.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(document, indent=2))
+    out = _write_new(
+        home / "runs",
+        now.strftime("%Y-%m-%dT%H%M%SZ"),
+        json.dumps(document, indent=2),
+    )
     print(format_morning(document))  # noqa: T201
     if document.get("packet"):
         print(f"packet for the best match (unsent): {document['packet']}")  # noqa: T201
