@@ -13,6 +13,7 @@ from app.jobtrends.decisions import (
 )
 from app.jobtrends.fit import (
     build_decided_index,
+    posting_keys,
     fit_roles,
     format_fit_list,
     normalize_company,
@@ -144,19 +145,27 @@ def test_decided_index_matches_by_link() -> None:
     assert index.covers(
         "Ramp Business Corp",
         "Senior Software Engineer, Product Foundations",
-        RAMP + "/application",
+        posting_keys(RAMP + "/application"),
     )
 
 
 def test_decided_index_matches_a_copy_through_the_stored_posting() -> None:
     index = build_decided_index(
         [_decision(RAMP, "Ramp", "Senior SWE, Product Foundations")],
-        [("Ramp", "Senior Software Engineer | Product Foundations", RAMP)],
+        [
+            (
+                "Ramp",
+                "Senior Software Engineer | Product Foundations",
+                posting_keys(RAMP),
+            )
+        ],
     )
     assert index.covers(
         "Ramp",
         "Senior Software Engineer | Product Foundations",
-        "https://himalayas.app/companies/ramp/jobs/senior-software-engineer",
+        posting_keys(
+            "https://himalayas.app/companies/ramp/jobs/senior-software-engineer"
+        ),
     )
 
 
@@ -174,20 +183,24 @@ def test_decided_index_matches_same_role_from_another_source() -> None:
     assert index.covers(
         "DataGrail, Inc.",
         "Staff Software Engineer",
-        "https://himalayas.app/companies/datagrail/jobs/staff-software-engineer",
+        posting_keys(
+            "https://himalayas.app/companies/datagrail/jobs/staff-software-engineer"
+        ),
     )
 
 
 def test_decided_index_keeps_a_distinct_requisition_with_the_same_title() -> None:
     index = build_decided_index(
         [_decision(RAMP, "Acme", "Senior Software Engineer")],
-        [("Acme", "Senior Software Engineer", RAMP)],
+        [("Acme", "Senior Software Engineer", posting_keys(RAMP))],
     )
-    assert not index.covers("Acme", "Senior Software Engineer", OTHER_ASHBY)
+    assert not index.covers(
+        "Acme", "Senior Software Engineer", posting_keys(OTHER_ASHBY)
+    )
     assert index.covers(
         "Acme",
         "Senior Software Engineer",
-        "https://himalayas.app/companies/acme/jobs/sse",
+        posting_keys("https://himalayas.app/companies/acme/jobs/sse"),
     )
 
 
@@ -195,8 +208,10 @@ def test_decided_index_keeps_a_different_level_at_the_same_company() -> None:
     index = build_decided_index(
         [_decision("https://x.test/1", "Twilio", "Staff Software Engineer")], []
     )
-    assert not index.covers("Twilio", "Senior Software Engineer", "https://x.test/2")
-    assert not index.covers("Twilio", "Principal Software Engineer", None)
+    assert not index.covers(
+        "Twilio", "Senior Software Engineer", posting_keys("https://x.test/2")
+    )
+    assert not index.covers("Twilio", "Principal Software Engineer", posting_keys(None))
 
 
 class _Result:
@@ -231,6 +246,8 @@ def _job(**kw: Any) -> SimpleNamespace:  # noqa: ANN401
         first_seen=NOW,
         posted_at=None,
         content_text="Python and TypeScript.",
+        provider=None,
+        external_id=None,
         team_size=None,
     )
     base.update(kw)
@@ -238,7 +255,13 @@ def _job(**kw: Any) -> SimpleNamespace:  # noqa: ANN401
 
 
 def _posting(job: SimpleNamespace) -> SimpleNamespace:
-    return SimpleNamespace(company_name=job.company_name, title=job.title, url=job.url)
+    return SimpleNamespace(
+        company_name=job.company_name,
+        title=job.title,
+        url=job.url,
+        provider=job.provider,
+        external_id=job.external_id,
+    )
 
 
 def _stored(url: str | None, company: str, title: str) -> SimpleNamespace:
@@ -368,3 +391,60 @@ def test_sync_accepts_a_tracker_that_only_grows() -> None:
     summary = sync_decisions(session, [a, b, c])  # type: ignore[arg-type]
     assert summary == SyncSummary(total=3, removed=0)
     assert len(session.added) == 3
+
+
+def test_fit_roles_matches_a_greenhouse_job_under_its_employer_url() -> None:
+    job = _job(
+        title="Senior Software Engineer",
+        url="https://careers.acme.example/openings/123",
+        provider="greenhouse",
+        external_id="123",
+    )
+    session = _Session(
+        [job],
+        [_posting(job)],
+        [
+            _stored(
+                "https://job-boards.greenhouse.io/acme/jobs/123", "Acme", "Senior SWE"
+            )
+        ],
+    )
+    result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
+    assert result.roles == []
+    assert result.hidden == 1
+
+
+def test_fit_roles_hides_aggregator_copies_without_a_first_party_row() -> None:
+    himalayas = _job(source="himalayas", url=RAMP, company_name="Ramp")
+    adzuna = _job(
+        source="adzuna",
+        company_name="Ramp",
+        location="Remote - United States",
+        url="https://www.adzuna.com/details/999",
+    )
+    session = _Session(
+        [himalayas, adzuna],
+        [],
+        [_stored(RAMP, "Ramp", "Senior SWE, Product Foundations")],
+    )
+    result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
+    assert result.roles == []
+
+
+def test_parse_tracker_keeps_balanced_parentheses_in_plain_links() -> None:
+    text = (
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        "| Acme | SWE | [Posting](https://example.test/jobs/engineer-(platform)) | skipped |\n"
+    )
+    [row] = parse_tracker(text)
+    assert row.url == "https://example.test/jobs/engineer-(platform)"
+
+
+def test_posting_keys_adds_the_provider_id() -> None:
+    assert posting_keys(
+        "https://careers.acme.example/openings/123", "greenhouse", "123"
+    ) == {
+        "careers.acme.example/openings/123",
+        "greenhouse:123",
+    }
+    assert posting_keys("https://x.test/a", "himalayas", "abc") == {"x.test/a"}

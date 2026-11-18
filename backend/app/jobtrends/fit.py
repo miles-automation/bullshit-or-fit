@@ -699,25 +699,33 @@ def is_provider_key(key: str | None) -> bool:
     return key is not None and key.startswith(PROVIDER_KEY_PREFIXES)
 
 
+def posting_keys(
+    url: str | None, provider: str | None = None, external_id: str | None = None
+) -> frozenset[str]:
+    keys = {url_key(url)}
+    if provider and external_id and f"{provider}:".startswith(PROVIDER_KEY_PREFIXES):
+        keys.add(f"{provider}:{external_id.strip().lower()}")
+    return frozenset(k for k in keys if k)
+
+
 @dataclass(frozen=True)
 class DecidedIndex:
     url_keys: frozenset[str] = frozenset()
     roles: frozenset[tuple[str, str]] = frozenset()
     requisition_roles: frozenset[tuple[str, str]] = frozenset()
 
-    def covers(self, company: str, title: str, url: str | None) -> bool:
-        key = url_key(url)
-        if key is not None and key in self.url_keys:
+    def covers(self, company: str, title: str, keys: frozenset[str]) -> bool:
+        if keys & self.url_keys:
             return True
         role = (normalize_company(company), normalize_title(title))
         if role in self.roles:
             return True
-        return role in self.requisition_roles and not is_provider_key(key)
+        return role in self.requisition_roles and not any(map(is_provider_key, keys))
 
 
 def build_decided_index(
     decisions: list[tuple[str | None, str, str]],
-    postings: list[tuple[str, str, str | None]],
+    postings: list[tuple[str, str, frozenset[str]]],
 ) -> DecidedIndex:
     keys = frozenset(key for key, _, _ in decisions if key)
     roles: set[tuple[str, str]] = set()
@@ -725,11 +733,12 @@ def build_decided_index(
     for key, company_key, title_key in decisions:
         target = requisition_roles if is_provider_key(key) else roles
         target.add((company_key, title_key))
-    for company, title, url in postings:
-        key = url_key(url)
-        if key is not None and key in keys:
+    for company, title, own_keys in postings:
+        matched = own_keys & keys
+        if matched:
             role = (normalize_company(company), normalize_title(title))
-            target = requisition_roles if is_provider_key(key) else roles
+            provider = any(map(is_provider_key, matched | own_keys))
+            target = requisition_roles if provider else roles
             target.add(role)
     return DecidedIndex(
         url_keys=keys,
@@ -767,6 +776,8 @@ def fit_roles(
             AtsJob.first_seen,
             AtsJob.posted_at,
             AtsJob.content_text,
+            AtsJob.provider,
+            AtsJob.external_id,
             DiscoveredBoard.team_size,
         )
         .outerjoin(
@@ -785,15 +796,20 @@ def fit_roles(
             or_(AtsJob.expires_at.is_(None), AtsJob.expires_at > moment),
         )
     ).all()
+    first_party = session.execute(
+        select(
+            AtsJob.company_name,
+            AtsJob.title,
+            AtsJob.url,
+            AtsJob.provider,
+            AtsJob.external_id,
+        ).where(AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES))
+    ).all()
     postings = [
-        (r.company_name, r.title, r.url)
-        for r in session.execute(
-            select(AtsJob.company_name, AtsJob.title, AtsJob.url).where(
-                AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES)
-            )
-        ).all()
+        (r.company_name, r.title, posting_keys(r.url, r.provider, r.external_id))
+        for r in [*first_party, *rows]
     ]
-    index = first_party_index([(company, title) for company, title, _ in postings])
+    index = first_party_index([(r.company_name, r.title) for r in first_party])
     decided = build_decided_index(
         [
             (r.url_key, r.company_key, r.title_key)
@@ -822,7 +838,9 @@ def fit_roles(
         if clearance == CLEARANCE_REQUIRED:
             continue
         key = (r.company_name.lower(), r.title.lower(), r.location)
-        if decided.covers(r.company_name, r.title, r.url):
+        if decided.covers(
+            r.company_name, r.title, posting_keys(r.url, r.provider, r.external_id)
+        ):
             hidden.add((normalize_company(r.company_name), normalize_title(r.title)))
             continue
         role = FitRole(
