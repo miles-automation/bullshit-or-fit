@@ -4,6 +4,9 @@ import pytest
 
 from app.jobtrends.fit import (
     FitRole,
+    first_party_index,
+    is_traceable,
+    normalize_company,
     language_blocks,
     posting_fresh,
     clearance_status,
@@ -424,3 +427,221 @@ def test_posting_fresh_boundaries() -> None:
     assert posting_fresh(oldest, oldest)
     assert posting_fresh(oldest + timedelta(seconds=1), oldest)
     assert not posting_fresh(oldest - timedelta(seconds=1), oldest)
+
+
+POSITRON = (
+    "Strong Rust skills, or expert-level C/C++ skills and a willingness to work in Rust "
+    "day to day, along with proficiency in Python for tooling."
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (POSITRON, True),
+        ("Must have Python and Rust experience, and AWS or Azure experience.", True),
+        (
+            "Strong Rust experience required, and experience with PostgreSQL or similar databases.",
+            True,
+        ),
+        ("Experience with Python, Go, or Java in production.", False),
+        (
+            "Strong backend skills in at least one production language, such as Go, Rust, Node.js or Python.",
+            False,
+        ),
+        (
+            "Service-oriented architectures in Go, Kotlin, or a comparable backend language.",
+            False,
+        ),
+        ("You will be developing using Golang/Python on high-traffic services.", False),
+        ("Strong Rust or Python experience required.", False),
+        (
+            "Write and operate production services in Python and Rust on AWS. Experience in or desire to learn Rust.",
+            False,
+        ),
+        (
+            "Strong expertise in Python and deep experience with C/C++ or other compiled languages.",
+            False,
+        ),
+        (
+            "Strong proficiency in Go required. We are happy to help you learn Kubernetes.",
+            True,
+        ),
+    ],
+)
+def test_language_alternatives_must_be_in_the_same_list(
+    text: str, blocked: bool
+) -> None:
+    assert language_blocks(text) is blocked
+
+
+def test_normalize_company_ignores_legal_suffixes() -> None:
+    assert normalize_company("Lyric, Inc.") == normalize_company("Lyric")
+    assert normalize_company("Bask Health") == "baskhealth"
+    assert normalize_company("Acme Incorporated") == normalize_company("Acme")
+    assert normalize_company("Acme, L.L.C.") == normalize_company("Acme")
+    assert normalize_company("Acme GmbH") == normalize_company("Acme")
+
+
+def test_is_traceable_only_checks_aggregator_rows() -> None:
+    index = first_party_index(
+        [("Lyric", "Staff Software Engineer"), ("Acme", "Backend Engineer")]
+    )
+    assert is_traceable("himalayas", "Lyric, Inc.", "Staff  Software Engineer", index)
+    assert not is_traceable("himalayas", "Lyric, Inc.", "Principal Engineer", index)
+    assert not is_traceable(
+        "himalayas", "Bask Health", "Senior Applied AI Engineer", index
+    )
+    assert is_traceable("ats", "Bask Health", "Anything", index)
+
+
+def test_rank_puts_untraceable_after_traceable_and_tags_it() -> None:
+    day = datetime(2026, 11, 17, tzinfo=UTC)
+    traced = _role(company_name="Traced", posted_at=day - timedelta(days=5))
+    untraced = _role(
+        company_name="Untraced", source="himalayas", posted_at=day, traceable=False
+    )
+    assert sorted([untraced, traced], key=rank_key) == [traced, untraced]
+    assert "[not on company site]" in format_fit_list([untraced], 1, now=day)
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        ("Strong experience in Go (Golang) or Python.", False),
+        ("Strong proficiency in Rust (or Python).", False),
+        ("Strong experience with Python or with Rust.", False),
+        ("Must have Rust experience and Python or Java proficiency.", True),
+        ("Proficiency in at least one of Python and Rust is required.", False),
+        ("Strong experience in a programming language such as Python and Rust.", False),
+        ("Proficiency in at least one of Go and Rust is required.", True),
+        ("Experience in one of Python or Java and strong Rust skills required.", True),
+        ("Experience in at least one of Python and modern C++ required.", False),
+        ("Strong experience in a language such as Python and modern C++.", False),
+        (
+            "Experience in one of Python or Java and modern Rust in production required.",
+            False,
+        ),
+        (
+            "Experience in one of Python or Java and production Go experience required.",
+            True,
+        ),
+        ("Strong experience in a language such as Go, Rust, Node.js or Python.", False),
+        (
+            "Experience with TypeScript, and working in Kotlin or Java services Expertise with PostgreSQL.",
+            False,
+        ),
+        ("Must have Go experience and Python or Java proficiency.", True),
+        (
+            "Hands-on production development in Go (Golang) or Rust and working Python proficiency.",
+            True,
+        ),
+        (
+            "Experience with Python or Go is helpful for the team, but you must have deep production Rust experience.",
+            True,
+        ),
+        ("Python, Go and Rust experience required.", True),
+        ("Experience with Python and/or Go in production.", False),
+        ("Strong proficiency in Rust or proficiency in Python.", False),
+        ("Strong Rust skills or Python skills required.", False),
+        ("Strong experience in Python or C/C++ required.", False),
+        ("Strong experience in Go, Rust, or Python. Willingness to learn Rust.", False),
+        (
+            "Must have production Rust experience. You should be eager to learn Rust internals.",
+            True,
+        ),
+        (
+            "5+ years of production Go experience required. Must be willing to learn Go internals.",
+            True,
+        ),
+        (
+            "We offer opportunities to learn and grow. Strong Rust experience required.",
+            True,
+        ),
+        (
+            "Five years of Rust experience required. There is no time to learn Rust on the job.",
+            True,
+        ),
+    ],
+)
+def test_language_decorated_alternatives_and_learning(text: str, blocked: bool) -> None:
+    assert language_blocks(text) is blocked
+
+
+def test_list_gap_is_linear_on_long_whitespace() -> None:
+    import time
+
+    start = time.perf_counter()
+    language_blocks("Strong Rust" + " " * 20000 + "or Python experience required.")
+    assert time.perf_counter() - start < 0.5
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (
+            "Must have 5 years of production Rust experience. Eager to learn Rust's advanced features.",
+            True,
+        ),
+        (
+            "Must have production Rust experience. Eager to learn Rust's async ecosystem.",
+            True,
+        ),
+        (
+            "Must have production Go experience. Willing to learn Go-specific tooling.",
+            True,
+        ),
+        ("Rust experience required. Desire to learn Rust is welcome too.", True),
+        ("Python backend. Happy to learn Go on the job.", False),
+        (
+            "Python and Rust services Experience in or desire to learn Rust Growth mindset and curiosity",
+            False,
+        ),
+        (
+            "Write and operate production services in Python and Rust on AWS. Experience in or desire to learn Rust.",
+            False,
+        ),
+    ],
+)
+def test_learning_waiver_respects_explicit_requirements(
+    text: str, blocked: bool
+) -> None:
+    assert language_blocks(text) is blocked
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        (
+            "We require production Rust experience. Eager to learn Rust and its ecosystem.",
+            True,
+        ),
+        (
+            "Required qualifications:\nProduction Rust experience.\nEager to learn Rust and its ecosystem.",
+            True,
+        ),
+        ("5+ years of Python experience and willingness to learn Rust.", False),
+        (
+            "Write and operate production services in Python and Rust on AWS. Must be willing to learn Rust.",
+            False,
+        ),
+        ("We must go fast. Production Python experience. Happy to learn Go.", False),
+    ],
+)
+def test_learning_waiver_local_then_guarded(text: str, blocked: bool) -> None:
+    assert language_blocks(text) is blocked
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        ("Willing to learn Python, but Rust experience is required.", True),
+        ("Willing to learn Python and must have Go experience.", True),
+        ("Willing to learn Python but Rust experience is required.", True),
+        ("Willing to learn Java but Go experience is required.", True),
+        ("Python backend. Willing to learn Rust and Go.", False),
+        ("Python backend. Eager to learn modern Rust quickly.", False),
+    ],
+)
+def test_learning_phrase_is_bounded(text: str, blocked: bool) -> None:
+    assert language_blocks(text) is blocked

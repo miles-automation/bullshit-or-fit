@@ -284,7 +284,7 @@ _GO = re.compile(
     r"|proficiency|knowledge|development|services?\b|code\b|programming|microservices))"
 )
 _MY_LANGUAGE = re.compile(
-    r"(?<![\w.])(python|typescript|javascript|java|node\.?js|react|swift|c#)(?!\w)"
+    r"(?<![\w.])(python|typescript|javascript|java|node\.?js|react|swift|c#|learnablelang)(?!\w)"
     r"|(?<!\w)\.net\b",
     re.I,
 )
@@ -303,9 +303,18 @@ _SOFT_CUE = re.compile(
     r"|not required|optional|desirable|desired|helpful|advantageous|beneficial)\b",
     re.I,
 )
-_ALTERNATIVE = re.compile(r"\b(or|such as|one of|at least one|any of|either)\b", re.I)
 _ANY_LANGUAGE = re.compile(
-    r"\b(comparable|similar|equivalent|any modern|another)\b", re.I
+    r"\b(comparable|similar|equivalent|any modern|another|other)\s+"
+    r"(?:[\w-]+\s+){0,2}languages?\b",
+    re.I,
+)
+_LIST_GAP = re.compile(
+    r"^[\s,/]*(?:[a-z][a-z-]*\s+){0,2}(?:,\s*)?"
+    r"(?:(?:and/or|or|and)\b[\s,/]*(?:[a-z][a-z-]*\s+){0,3})?$",
+    re.I,
+)
+_LIST_LEAD = re.compile(
+    r"\b(such as|one of|at least one|any of|either)\b[^.;]{0,30}$", re.I
 )
 _WAIVER = re.compile(
     r"(\b(no|not|without)\b|n't\b)[^,;.]{0,40}\b(experience|required|necessary|needed|expected"
@@ -328,6 +337,201 @@ def _other_language_mentions(text: str) -> int:
     return len(_OTHER_LANGUAGE.findall(text)) + len(_GO.findall(text))
 
 
+_LEARN_CUE = re.compile(
+    r"\b(?:desire|willing(?:ness)?|eager(?:ness)?|open|happy|excited|keen|able)\s+to\s+learn\b",
+    re.I,
+)
+_LEARNABLE_TOKEN = "learnablelang"
+_LEARN_END = re.compile(
+    r"\s*(?:$|[.,;:!?)\n]|(?:and|or)\b|on the job\b|as needed\b|if needed\b|quickly\b"
+    r"|is a plus\b|a plus\b)",
+    re.I,
+)
+_NEXT_BULLET = re.compile(r"\s+[A-Z][a-z]+\s+[a-z]")
+_HARD_CUE = r"(?:must|require|required|requires|minimum|mandatory|\d+\+?\s*years?)"
+_STRICT_LANGUAGE_CUE = re.compile(
+    r"\b(?:production|strong|deep|expert\w*|proficien\w*|years|minimum|required|must)\b",
+    re.I,
+)
+_EXPERIENCE_NOUN = re.compile(
+    r"\b(?:experience|expertise|proficiency|skills?|years|background|fluency)\b", re.I
+)
+
+
+def _language_pattern(language: str) -> str:
+    if language in ("go", "golang"):
+        return r"(?:\bGo\b|\b[Gg]olang\b)"
+    return r"(?<![\w+])" + re.escape(language) + r"(?![\w+])"
+
+
+def _language_flags(language: str) -> int:
+    return 0 if language in ("go", "golang") else re.I
+
+
+def _phrase_languages(body: str, cue: re.Match[str]) -> list[tuple[str, int, int]]:
+    window = re.split(r"[.;\n]", body[cue.end() : cue.end() + 40], maxsplit=1)[0]
+    found = [
+        (x.group(0).lower(), cue.end() + x.start(), cue.end() + x.end())
+        for x in _OTHER_LANGUAGE.finditer(window)
+    ]
+    for go in re.finditer(r"\b(?:Go|[Gg]olang)\b", window):
+        found.append(("go", cue.end() + go.start(), cue.end() + go.end()))
+    found.sort(key=lambda item: item[1])
+    phrase: list[tuple[str, int, int]] = []
+    previous = cue.end()
+    for language, start, stop in found:
+        gap = body[previous:start]
+        if phrase and not _BARE_GAP.match(gap):
+            break
+        if not phrase and (
+            not re.match(
+                r"^\s+(?:(?!(?:but|and|or|while|however|though)\b)[\w-]+\s+){0,2}$",
+                gap,
+                re.I,
+            )
+            or _MY_LANGUAGE.search(gap)
+        ):
+            break
+        phrase.append((language, start, stop))
+        previous = stop
+    return phrase
+
+
+def _neutralize_learning_phrases(body: str) -> tuple[str, set[str]]:
+    learnable: set[str] = set()
+    pieces: list[str] = []
+    cursor = 0
+    for cue in _LEARN_CUE.finditer(body):
+        for language, start, stop in sorted(
+            _phrase_languages(body, cue), key=lambda x: x[1]
+        ):
+            if start < cursor:
+                continue
+            rest = body[stop : stop + 30]
+            if _LEARN_END.match(rest) or _NEXT_BULLET.match(rest):
+                learnable.add(language)
+            pieces.append(body[cursor:start])
+            pieces.append(_LEARNABLE_TOKEN)
+            cursor = stop
+    pieces.append(body[cursor:])
+    return "".join(pieces), learnable
+
+
+def _explicitly_required(body: str, language: str) -> bool:
+    lang = _language_pattern(language)
+    flags = _language_flags(language)
+    if re.search(r"(?i:" + _HARD_CUE + r")[^.;\n]{0,60}" + lang, body, flags):
+        return True
+    if re.search(
+        lang + r"[^.;\n]{0,40}(?i:\b(?:required|is a must|mandatory)\b)", body, flags
+    ):
+        return True
+    for m in re.finditer(lang, body, flags):
+        before = re.split(r"[.;\n]", body[max(0, m.start() - 20) : m.start()])[-1]
+        after = re.split(r"[.;\n]", body[m.end() : m.end() + 20])[0]
+        around = body[max(0, m.start() - 40) : m.end() + 40]
+        if _EXPERIENCE_NOUN.search(
+            before + " " + after
+        ) and _STRICT_LANGUAGE_CUE.search(around):
+            return True
+    return False
+
+
+def _neutralize_learnable(body: str) -> str:
+    body, learnable = _neutralize_learning_phrases(body)
+    for language in learnable:
+        if not _explicitly_required(body, language):
+            body = re.sub(
+                _language_pattern(language),
+                _LEARNABLE_TOKEN,
+                body,
+                flags=_language_flags(language),
+            )
+    return body
+
+
+def _list_gap(gap: str) -> bool:
+    cleaned = re.sub(r"[()]", " ", gap)
+    cleaned = re.sub(r"\bc\s*/\s*$", " ", cleaned, flags=re.I)
+    return bool(_LIST_GAP.match(cleaned))
+
+
+def _language_spans(text: str) -> list[tuple[int, int, bool]]:
+    spans = [(m.start(), m.end(), False) for m in _OTHER_LANGUAGE.finditer(text)]
+    spans += [(m.start(), m.end(), False) for m in _GO.finditer(text)]
+    spans += [(m.start(), m.end(), True) for m in _MY_LANGUAGE.finditer(text)]
+    return sorted(spans)
+
+
+def _language_groups(
+    sentence: str,
+) -> list[tuple[list[tuple[int, int, bool]], list[str]]]:
+    spans = _language_spans(sentence)
+    groups: list[tuple[list[tuple[int, int, bool]], list[str]]] = []
+    index = 0
+    while index < len(spans):
+        group = [spans[index]]
+        gaps: list[str] = []
+        while index + 1 < len(spans):
+            gap = sentence[group[-1][1] : spans[index + 1][0]]
+            if not _list_gap(gap):
+                break
+            gaps.append(gap)
+            index += 1
+            group.append(spans[index])
+        index += 1
+        groups.append((group, gaps))
+    return groups
+
+
+_BARE_GAP = re.compile(
+    r"^[\s,/()]*(?:(?:and/or|or|and)\b[\s,/()]*)?"
+    r"(?:(?:modern|idiomatic|recent|contemporary|typed|native|functional|object-oriented)\s+){0,2}$",
+    re.I,
+)
+
+
+def _is_conjunction(gap: str) -> bool:
+    text = gap.lower().replace("and/or", "or")
+    return bool(re.search(r"\band\b", text)) and not re.search(r"\bor\b|/", text)
+
+
+def _group_excused(
+    sentence: str, group: list[tuple[int, int, bool]], gaps: list[str]
+) -> bool:
+    lead = sentence[max(0, group[0][0] - 60) : group[0][0]]
+    in_lead = bool(_LIST_LEAD.search(lead))
+    segments: list[tuple[list[bool], bool]] = [([group[0][2]], in_lead)]
+    for gap, span in zip(gaps, group[1:], strict=True):
+        if in_lead and _BARE_GAP.match(gap):
+            segments[-1] = (segments[-1][0] + [span[2]], True)
+            continue
+        in_lead = False
+        if _is_conjunction(gap):
+            segments.append(([span[2]], False))
+            continue
+        members, has_or = segments[-1]
+        alternative = has_or or bool(re.search(r"\bor\b|/", gap, re.I))
+        segments[-1] = (members + [span[2]], alternative)
+    for members, has_or in segments:
+        if all(members):
+            continue
+        if not (any(members) and has_or):
+            return False
+    return True
+
+
+def _offers_familiar_alternative(sentence: str) -> bool:
+    blocked_groups = [
+        (group, gaps)
+        for group, gaps in _language_groups(sentence)
+        if not all(mine for *_, mine in group)
+    ]
+    return bool(blocked_groups) and all(
+        _group_excused(sentence, group, gaps) for group, gaps in blocked_groups
+    )
+
+
 def _integration_only(clause: str) -> bool:
     for m in _INTEGRATION.finditer(clause):
         tail = clause[m.end() : m.end() + 40]
@@ -337,7 +541,7 @@ def _integration_only(clause: str) -> bool:
 
 
 def language_blocks(text: str | None) -> bool:
-    body = (text or "").replace("\u2019", "'")
+    body = _neutralize_learnable((text or "").replace("\u2019", "'"))
     mine = bool(_MY_LANGUAGE.search(body))
     marks = _soft_scope_marks(body)
     mandatory = 0
@@ -355,7 +559,7 @@ def language_blocks(text: str | None) -> bool:
             continue
         if _ANY_LANGUAGE.search(sentence):
             continue
-        if _MY_LANGUAGE.search(sentence) and _ALTERNATIVE.search(sentence):
+        if _offers_familiar_alternative(sentence):
             continue
         clauses = _COMMA.split(sentence)
         for index, clause in enumerate(clauses):
@@ -373,7 +577,7 @@ def language_blocks(text: str | None) -> bool:
                 scope += "," + following
             if _SOFT_CUE.search(scope) or _WAIVER.search(scope):
                 continue
-            if _integration_only(clause):
+            if _integration_only(clause) or _offers_familiar_alternative(clause):
                 continue
             if not _ABILITY.search(clause):
                 mandatory += mentions
@@ -409,15 +613,49 @@ class FitRole:
     first_seen: datetime
     clearance: str | None = None
     posted_at: datetime | None = None
+    traceable: bool = True
 
     @property
     def listed_at(self) -> datetime:
         return self.posted_at or self.first_seen
 
 
-def rank_key(role: FitRole) -> tuple[int, float, int]:
+def rank_key(role: FitRole) -> tuple[int, int, float, int]:
     small = 0 if role.team_size is not None and role.team_size <= SMALL_TEAM else 1
-    return (small, -role.listed_at.timestamp(), -(role.comp_max or 0))
+    untraceable = 0 if role.traceable else 1
+    return (small, untraceable, -role.listed_at.timestamp(), -(role.comp_max or 0))
+
+
+FIRST_PARTY_SOURCES = (SOURCE_ATS, "commute_shed")
+_COMPANY_NOISE = re.compile(
+    r"\b(inc|incorporated|llc|llp|plc|gmbh|ltd|limited|corp|corporation|co|company"
+    r"|technologies|technology|the)\b"
+)
+
+
+def normalize_company(name: str) -> str:
+    text = re.sub(r"(?<=\w)\.(?=\w)|\.$", "", name.lower()).replace("&", " and ")
+    text = _COMPANY_NOISE.sub(" ", re.sub(r"[^a-z0-9&]+", " ", text))
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def normalize_title(title: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9+#]+", " ", title.lower()).split())
+
+
+def first_party_index(pairs: list[tuple[str, str]]) -> dict[str, set[str]]:
+    index: dict[str, set[str]] = {}
+    for company, title in pairs:
+        index.setdefault(normalize_company(company), set()).add(normalize_title(title))
+    return index
+
+
+def is_traceable(
+    source: str, company: str, title: str, index: dict[str, set[str]]
+) -> bool:
+    if source != SOURCE_HIMALAYAS:
+        return True
+    return normalize_title(title) in index.get(normalize_company(company), set())
 
 
 def fit_roles(
@@ -461,6 +699,16 @@ def fit_roles(
             or_(AtsJob.expires_at.is_(None), AtsJob.expires_at > moment),
         )
     ).all()
+    index = first_party_index(
+        [
+            (company, title)
+            for company, title in session.execute(
+                select(AtsJob.company_name, AtsJob.title).where(
+                    AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES)
+                )
+            ).all()
+        ]
+    )
     roles: dict[tuple[str, str, str | None], FitRole] = {}
     for r in rows:
         if not (
@@ -488,6 +736,7 @@ def fit_roles(
             first_seen=r.first_seen,
             clearance=clearance,
             posted_at=r.posted_at,
+            traceable=is_traceable(r.source, r.company_name, r.title, index),
         )
         key = (role.company_name.lower(), role.title.lower(), role.location)
         current = roles.get(key)
@@ -523,5 +772,7 @@ def format_fit_list(
             f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)}; {_age(r, moment)})"
         )
         tag = f" [clearance: {r.clearance}]" if r.clearance else ""
+        if not r.traceable:
+            tag += " [not on company site]"
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
     return "\n".join(lines)
