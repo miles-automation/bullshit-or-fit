@@ -29,3 +29,10 @@ Use Spark Swarm public leads endpoints via backend proxy routes:
 - Keep copy concise and conversion-focused.
 - Disclaim clearly: market information / early-access interest gauging, **not career, financial, or legal advice**. Never reintroduce candidate-screening / hiring-decision framing (that product was killed 2026-07-09).
 - Fake-door concept pages must be honest: real prices measure willingness to pay, but the page must signal early-access / interest-gauging and must not imply a live product or charge without an actual near-launch pre-sale.
+
+## Agent morning job search
+
+Tooling for agents that run the daily fit list and its follow-up lives in
+`backend/app/jobtrends/fit_export.py`, `fit_feed.py`, `morning.py` and
+`morning_cli.py`. Read `docs/agent-morning-job-search.md` first. Personal
+records stay out of this public repository.

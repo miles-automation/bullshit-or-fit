@@ -437,3 +437,47 @@ def test_mail_status_keeps_only_status_fields() -> None:
     assert all(
         set(i) == {"date", "source_ref", "company", "status", "kind"} for i in items
     )
+
+
+def test_shortlist_takes_one_role_per_company() -> None:
+    roles = [
+        _role(),
+        _role(title="Staff Software Engineer", role_id="ats:greenhouse:acme:2"),
+        _role(company_name="Beta", role_id="b1"),
+    ]
+    morning = shortlist(_export(*roles), [], [])
+    assert [r["role_id"] for r in morning.shortlist] == ["ats:greenhouse:acme:1", "b1"]
+    assert (
+        morning.held[0]["reason"] == "another role at this company is on the shortlist"
+    )
+
+
+def test_newer_owner_feedback_supersedes_an_agent_suggestion(tmp_path: Path) -> None:
+    _fb(
+        tmp_path,
+        kind=AGENT,
+        author="claude-code",
+        decision="note",
+        role_id=None,
+        reason="crypto company, probably skip",
+    )
+    morning = shortlist(_export(_role()), [], load_feedback(tmp_path))
+    [role] = morning.shortlist
+    assert role["agent_suggestions"][0]["reason"] == "crypto company, probably skip"
+    later = datetime(2026, 11, 18, 15, tzinfo=UTC)
+    _fb(
+        tmp_path,
+        author="claude-code",
+        decision="note",
+        role_id=None,
+        reason="fine if it's a good fit",
+        evidence='Rich: "Coinbase is fine if it\'s a good fit."',
+        now=later,
+    )
+    morning = shortlist(_export(_role()), [], load_feedback(tmp_path))
+    [role] = morning.shortlist
+    assert role["agent_suggestions"] == []
+    assert (
+        role["superseded_suggestions"][0]["reason"] == "crypto company, probably skip"
+    )
+    assert role["owner_notes"][0]["reason"] == "fine if it's a good fit"

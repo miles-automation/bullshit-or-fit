@@ -262,6 +262,7 @@ def _posting(job: SimpleNamespace) -> SimpleNamespace:
         url=job.url,
         provider=job.provider,
         external_id=job.external_id,
+        posted_at=job.posted_at,
     )
 
 
@@ -532,3 +533,20 @@ def test_url_key_keeps_query_order() -> None:
     assert url_key("https://a.example/j?jobId=123&jobId=456") != url_key(
         "https://a.example/j?jobId=456&jobId=123"
     )
+
+
+def test_fit_roles_dates_an_aggregator_copy_by_the_company_posting() -> None:
+    old = datetime(2026, 7, 30, tzinfo=UTC)
+    company = _job(posted_at=old, first_seen=old)
+    company_row = _posting(company)
+    copy = _job(
+        source="himalayas",
+        url="https://himalayas.app/companies/acme/jobs/sse",
+        posted_at=NOW,
+        location="Remote - United States",
+    )
+    result = fit_roles(_Session([copy], [company_row], []), now=NOW)  # type: ignore[arg-type]
+    assert result.roles == []
+    fresh_row = SimpleNamespace(**{**vars(_posting(company)), "posted_at": NOW})
+    result = fit_roles(_Session([copy], [fresh_row], []), now=NOW)  # type: ignore[arg-type]
+    assert [r.official_url for r in result.roles] == [company.url]

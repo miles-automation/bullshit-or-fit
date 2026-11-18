@@ -29,7 +29,7 @@ _NON_ENGINEERING_MANAGER = re.compile(
     re.I,
 )
 _EXCLUDED_ROLE = re.compile(
-    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp"
+    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp|vice president"
     r"|recruit\w*|sales|account|support|qa|test|tester|mechanical|electrical|hardware"
     r"|firmware|embedded|ios|android|mobile|network|civil|structural|field|clinical"
     r"|security|leader|customer|solutions|sales engineer|construction)\b",
@@ -859,6 +859,7 @@ def fit_roles(
             AtsJob.url,
             AtsJob.provider,
             AtsJob.external_id,
+            AtsJob.posted_at,
         ).where(AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES))
     ).all()
     postings = [
@@ -866,11 +867,12 @@ def fit_roles(
         for r in [*first_party, *rows]
     ]
     index = first_party_index([(r.company_name, r.title) for r in first_party])
-    official: dict[tuple[str, str], str] = {}
+    official: dict[tuple[str, str], tuple[str, datetime | None]] = {}
     for r in first_party:
         if r.url:
             official.setdefault(
-                (normalize_company(r.company_name), normalize_title(r.title)), r.url
+                (normalize_company(r.company_name), normalize_title(r.title)),
+                (r.url, r.posted_at),
             )
     decision_rows = session.execute(
         select(
@@ -897,7 +899,15 @@ def fit_roles(
             and comp_fits(r.comp_max, r.comp_currency)
         ):
             continue
-        if not posting_fresh(r.posted_at, oldest):
+        match = (
+            None
+            if r.source in FIRST_PARTY_SOURCES
+            else official.get(
+                (normalize_company(r.company_name), normalize_title(r.title))
+            )
+        )
+        posted_at = match[1] if match and match[1] is not None else r.posted_at
+        if not posting_fresh(posted_at, oldest):
             continue
         if language_blocks(r.content_text):
             continue
@@ -921,16 +931,12 @@ def fit_roles(
             team_size=r.team_size,
             first_seen=r.first_seen,
             clearance=clearance,
-            posted_at=r.posted_at,
+            posted_at=posted_at,
             traceable=is_traceable(r.source, r.company_name, r.title, index),
             role_id=r.id,
-            official_url=(
-                r.url
-                if r.source in FIRST_PARTY_SOURCES
-                else official.get(
-                    (normalize_company(r.company_name), normalize_title(r.title))
-                )
-            ),
+            official_url=r.url
+            if r.source in FIRST_PARTY_SOURCES
+            else (match and match[0]),
             posting_text=r.content_text,
         )
         current = roles.get(key)

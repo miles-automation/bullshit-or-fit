@@ -244,10 +244,12 @@ def shortlist(
     for cid in export.get("active_application_companies", []):
         active_count[cid] = max(active_count.get(cid, 0), 1)
     owner = _latest_owner(feedback)
-    by_role: dict[str | None, list[Feedback]] = {}
+    owner_by_target: dict[str, list[Feedback]] = {}
+    by_role: dict[str, list[Feedback]] = {}
     for f in feedback:
-        if f.author_kind == AGENT:
-            by_role.setdefault(f.role_id or f.company_id, []).append(f)
+        target = f.role_id or f.company_id
+        bucket = owner_by_target if f.author_kind == OWNER else by_role
+        bucket.setdefault(target, []).append(f)
     morning = Morning()
     candidates: list[tuple[int, int, dict[str, Any]]] = []
     for role in export.get("roles", []):
@@ -288,22 +290,71 @@ def shortlist(
                 }
             )
             continue
-        suggestions = [
-            {"id": f.id, "author": f.author, "decision": f.decision, "reason": f.reason}
-            for f in by_role.get(role["role_id"], []) + by_role.get(cid, [])
+        owner_items = owner_by_target.get(role["role_id"], []) + owner_by_target.get(
+            cid, []
+        )
+        suggestions: list[dict[str, Any]] = []
+        superseded: list[dict[str, Any]] = []
+        for f in by_role.get(role["role_id"], []) + by_role.get(cid, []):
+            target = f.role_id or f.company_id
+            newer = [
+                o
+                for o in owner_by_target.get(target, [])
+                if o.created_at >= f.created_at
+            ]
+            item = {
+                "id": f.id,
+                "author": f.author,
+                "decision": f.decision,
+                "reason": f.reason,
+            }
+            if newer:
+                superseded.append({**item, "superseded_by": newer[-1].id})
+            else:
+                suggestions.append(item)
+        owner_notes = [
+            {
+                "id": o.id,
+                "decision": o.decision,
+                "reason": o.reason,
+                "evidence": o.evidence,
+            }
+            for o in owner_items
+            if o.decision == "note"
         ]
-        if suggestions:
-            morning.suggestions.append({**_brief(role), "suggestions": suggestions})
+        if suggestions or superseded:
+            morning.suggestions.append(
+                {**_brief(role), "suggestions": suggestions, "superseded": superseded}
+            )
         if not strong_fit(role):
             morning.not_strong += 1
             continue
         boost = 0 if role_fb and role_fb.decision == "good_fit" else 1
         candidates.append(
-            (boost, role["rank"], {**role, "agent_suggestions": suggestions})
+            (
+                boost,
+                role["rank"],
+                {
+                    **role,
+                    "agent_suggestions": suggestions,
+                    "superseded_suggestions": superseded,
+                    "owner_notes": owner_notes,
+                },
+            )
         )
-    morning.shortlist = [
-        r for _, _, r in sorted(candidates, key=lambda c: (c[0], c[1]))
-    ][:size]
+    seen: set[str] = set()
+    for _, _, role in sorted(candidates, key=lambda c: (c[0], c[1])):
+        if role["company_id"] in seen:
+            morning.held.append(
+                {
+                    **_brief(role),
+                    "reason": "another role at this company is on the shortlist",
+                }
+            )
+            continue
+        if len(morning.shortlist) < size:
+            morning.shortlist.append(role)
+            seen.add(role["company_id"])
     return morning
 
 
@@ -352,6 +403,12 @@ def format_morning(document: dict[str, Any]) -> str:
         lines.append(f"   {r['official_url']}  role {r['role_id']}")
         if r["gaps"]:
             lines.append(f"   gaps: {'; '.join(r['gaps'])}")
+        for n in r.get("owner_notes", []):
+            lines.append(f"   owner note: {n['reason']}")
+        for s in r.get("superseded_suggestions", []):
+            lines.append(
+                f"   agent suggestion superseded by owner feedback {s['superseded_by']}: {s['reason']}"
+            )
         for s in r.get("agent_suggestions", []):
             lines.append(
                 f"   agent suggestion (not applied): {s['author']} {s['decision']}: {s['reason']}"

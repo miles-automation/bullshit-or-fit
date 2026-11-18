@@ -661,6 +661,7 @@ def test_learning_phrase_is_bounded(text: str, blocked: bool) -> None:
         ("Director of Engineering", False),
         ("Head of Engineering", False),
         ("VP, Engineering", False),
+        ("Vice President of Engineering", False),
         ("Product Manager, Engineering Platform", False),
         ("Technical Program Manager, Infrastructure", False),
         ("Project Manager, Software Delivery", False),
