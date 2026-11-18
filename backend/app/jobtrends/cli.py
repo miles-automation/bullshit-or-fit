@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from app.config import settings
 from app.db import SessionLocal
@@ -234,8 +235,27 @@ def _cmd_fit(days: int, max_age: int) -> int:
     from app.jobtrends.fit import fit_roles, format_fit_list
 
     with SessionLocal() as session:
-        roles = fit_roles(session, days=days, max_age_days=max_age)
-        print(format_fit_list(roles, days))  # noqa: T201
+        result = fit_roles(session, days=days, max_age_days=max_age)
+        print(format_fit_list(result.roles, days, hidden=result.hidden))  # noqa: T201
+    return 0
+
+
+def _cmd_fit_decisions_sync(path: str, allow_removals: bool) -> int:
+    from app.jobtrends.decisions import TrackerError, parse_tracker, sync_decisions
+
+    text = sys.stdin.read() if path == "-" else Path(path).read_text()
+    try:
+        rows = parse_tracker(text)
+        if not rows:
+            raise TrackerError("no tracker rows found")
+        with SessionLocal() as session:
+            summary = sync_decisions(session, rows, allow_removals=allow_removals)
+    except TrackerError as exc:
+        print(f"fit-decisions-sync: {exc}; nothing changed", file=sys.stderr)  # noqa: T201
+        return 1
+    print(  # noqa: T201
+        f"fit decisions: {summary.total} synced, {summary.removed} removed"
+    )
     return 0
 
 
@@ -280,6 +300,12 @@ def main(argv: list[str] | None = None) -> int:
     p_fit = sub.add_parser("fit", help="new roles that fit Rich's search filters")
     p_fit.add_argument("--days", type=int, default=1)
     p_fit.add_argument("--max-age", type=int, default=30)
+    p_sync = sub.add_parser(
+        "fit-decisions-sync",
+        help="replace applied/skipped roles with the rows of a tracker table",
+    )
+    p_sync.add_argument("path", help="tracker markdown file, or - for stdin")
+    p_sync.add_argument("--allow-removals", action="store_true")
 
     sub.add_parser("migrate", help="apply DB migrations (alembic upgrade head)")
 
@@ -324,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_himalayas_snapshot()
     if args.cmd == "fit":
         return _cmd_fit(args.days, args.max_age)
+    if args.cmd == "fit-decisions-sync":
+        return _cmd_fit_decisions_sync(args.path, args.allow_removals)
     if args.cmd == "migrate":
         return _cmd_migrate()
     return 2

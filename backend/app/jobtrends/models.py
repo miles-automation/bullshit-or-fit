@@ -261,6 +261,21 @@ class DiscoveredBoard(Base):
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class FitDecision(Base):
+    __tablename__ = "fit_decisions"
+    __table_args__ = {"schema": SCHEMA}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    company_name: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str | None] = mapped_column(Text)
+    url_key: Mapped[str | None] = mapped_column(Text, index=True)
+    company_key: Mapped[str] = mapped_column(Text, nullable=False)
+    title_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class CommuteShedEmployer(Base):
     """Reference: a single employer reachable from a home base (Laramie, WY).
 
