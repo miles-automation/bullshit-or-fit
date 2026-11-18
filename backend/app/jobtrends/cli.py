@@ -15,6 +15,7 @@ always safe. Change taxonomy.py/comp.py and re-run `extract` without re-fetching
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -231,10 +232,15 @@ def _cmd_himalayas_snapshot() -> int:
     return 0
 
 
-def _cmd_fit(days: int, max_age: int) -> int:
+def _cmd_fit(days: int, max_age: int, output: str) -> int:
     from app.jobtrends.fit import fit_roles, format_fit_list
+    from app.jobtrends.fit_export import export_fit
 
     with SessionLocal() as session:
+        if output == "json":
+            document = export_fit(session, days=days, max_age_days=max_age)
+            print(json.dumps(document, indent=2))  # noqa: T201
+            return 0
         result = fit_roles(session, days=days, max_age_days=max_age)
         print(format_fit_list(result.roles, days, hidden=result.hidden))  # noqa: T201
     return 0
@@ -300,6 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fit = sub.add_parser("fit", help="new roles that fit Rich's search filters")
     p_fit.add_argument("--days", type=int, default=1)
     p_fit.add_argument("--max-age", type=int, default=30)
+    p_fit.add_argument("--format", choices=["text", "json"], default="text")
     p_sync = sub.add_parser(
         "fit-decisions-sync",
         help="replace applied/skipped roles with the rows of a tracker table",
@@ -349,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "himalayas-snapshot":
         return _cmd_himalayas_snapshot()
     if args.cmd == "fit":
-        return _cmd_fit(args.days, args.max_age)
+        return _cmd_fit(args.days, args.max_age, args.format)
     if args.cmd == "fit-decisions-sync":
         return _cmd_fit_decisions_sync(args.path, args.allow_removals)
     if args.cmd == "migrate":

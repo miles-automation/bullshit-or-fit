@@ -235,6 +235,7 @@ NOW = datetime(2026, 11, 17, 12, tzinfo=UTC)
 
 def _job(**kw: Any) -> SimpleNamespace:  # noqa: ANN401
     base: dict[str, Any] = dict(
+        id="ats:acme:1",
         source="ats",
         company_name="Acme",
         title="Senior Software Engineer",
@@ -266,7 +267,9 @@ def _posting(job: SimpleNamespace) -> SimpleNamespace:
 
 def _stored(url: str | None, company: str, title: str) -> SimpleNamespace:
     key, company_key, title_key = _decision(url, company, title)
-    return SimpleNamespace(url_key=key, company_key=company_key, title_key=title_key)
+    return SimpleNamespace(
+        url_key=key, company_key=company_key, title_key=title_key, status="skipped"
+    )
 
 
 def test_fit_roles_hides_decided_roles_and_their_copies() -> None:
