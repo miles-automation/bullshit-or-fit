@@ -18,11 +18,21 @@ MAX_POSTING_AGE_DAYS = 30
 SMALL_TEAM = 100
 
 _ROLE = re.compile(r"\b(engineer|engineering|developer|architect)\b", re.I)
+_MANAGER_TITLE = re.compile(
+    r"\b(engineering|development|software)\s+(manager|mgr)\b"
+    r"|\b(manager|mgr)\b[\s,]+(of\s+)?(software\s+)?(engineering|development|engineers?)\b",
+    re.I,
+)
+_NON_ENGINEERING_MANAGER = re.compile(
+    r"\b(product|program|project|account|accounts|sales|customer|success|marketing"
+    r"|partner|partnerships|operations|facilities|construction|delivery)\s+(manager|mgr)\b",
+    re.I,
+)
 _EXCLUDED_ROLE = re.compile(
-    r"\b(intern|internship|junior|jr|new grad|graduate|manager|director|head of|vp"
+    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp"
     r"|recruit\w*|sales|account|support|qa|test|tester|mechanical|electrical|hardware"
     r"|firmware|embedded|ios|android|mobile|network|civil|structural|field|clinical"
-    r"|security|leader|customer|solutions|sales engineer)\b",
+    r"|security|leader|customer|solutions|sales engineer|construction)\b",
     re.I,
 )
 _EXCLUDED_LANGUAGE = re.compile(
@@ -48,9 +58,16 @@ _US = re.compile(
 )
 
 
+def is_manager_title(title: str) -> bool:
+    return bool(
+        _MANAGER_TITLE.search(title) and not _NON_ENGINEERING_MANAGER.search(title)
+    )
+
+
 def title_fits(title: str) -> bool:
     return bool(
-        _ROLE.search(title)
+        (_ROLE.search(title) or is_manager_title(title))
+        and not _NON_ENGINEERING_MANAGER.search(title)
         and not _EXCLUDED_ROLE.search(title)
         and not _EXCLUDED_LANGUAGE.search(title)
     )
@@ -920,6 +937,8 @@ def format_fit_list(
             f"- {r.company_name}{size}: {r.title} ({r.location or 'location not listed'}; {_pay(r)}; {_age(r, moment)})"
         )
         tag = f" [clearance: {r.clearance}]" if r.clearance else ""
+        if is_manager_title(r.title):
+            tag += " [manager]"
         if not r.traceable:
             tag += " [not on company site]"
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
