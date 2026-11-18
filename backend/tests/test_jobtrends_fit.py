@@ -27,7 +27,6 @@ from app.jobtrends.fit import (
         ("Senior Go Engineer", False),
         ("Rust Developer", False),
         ("Senior C++ Engineer", False),
-        ("Engineering Manager", False),
         ("Software Engineering Intern", False),
         ("Senior iOS Engineer", False),
         ("Account Executive", False),
@@ -648,3 +647,42 @@ def test_learning_waiver_local_then_guarded(text: str, blocked: bool) -> None:
 )
 def test_learning_phrase_is_bounded(text: str, blocked: bool) -> None:
     assert language_blocks(text) is blocked
+
+
+@pytest.mark.parametrize(
+    ("title", "ok"),
+    [
+        ("Engineering Manager", True),
+        ("Senior Engineering Manager, Platform", True),
+        ("Staff Engineering Manager", True),
+        ("Manager, Software Engineering", True),
+        ("Software Development Manager", True),
+        ("Mgr, Engineering", True),
+        ("Director of Engineering", False),
+        ("Head of Engineering", False),
+        ("VP, Engineering", False),
+        ("Product Manager, Engineering Platform", False),
+        ("Technical Program Manager, Infrastructure", False),
+        ("Project Manager, Software Delivery", False),
+        ("Account Manager", False),
+        ("Customer Success Manager, Software", False),
+        ("Office Manager", False),
+        ("Engineering Manager, Android", False),
+        ("Engineering Manager, Golang Platform", False),
+        ("Research Data Manager", False),
+        ("Senior Software Safety Manager", False),
+        ("Engineering Manager - Bridge Design/Build/Construction", False),
+        ("Senior Manager, Software Engineer", True),
+        ("Sr Software Engineer II - Ads Manager (Front End)", True),
+    ],
+)
+def test_title_fits_manager_roles(title: str, ok: bool) -> None:
+    assert title_fits(title) is ok
+
+
+def test_format_fit_list_tags_manager_roles() -> None:
+    text = format_fit_list([_role(title="Engineering Manager")], 1)
+    assert "[manager]" in text
+    assert "[manager]" not in format_fit_list([_role()], 1)
+    ic = _role(title="Sr Software Engineer II - Ads Manager (Front End)")
+    assert "[manager]" not in format_fit_list([ic], 1)
