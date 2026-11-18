@@ -13,7 +13,7 @@ from app.jobtrends.models import FitDecision
 REQUIRED_COLUMNS = ("company", "role", "link", "status")
 _LINK = re.compile(
     r"\]\(<(https?://[^>\s]+)>\)"
-    r'|\]\((https?://(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"]*")?\)'
+    r"""|\]\((https?://(?:[^()\s]|\([^()\s]*\))+)(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\)"""
     r"|<(https?://[^>\s]+)>|(https?://[^\s)>]+)"
 )
 _DIVIDER = re.compile(r"^\|?(?:\s*:?-+:?\s*\|)+\s*:?-*:?\s*$")

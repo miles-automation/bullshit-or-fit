@@ -513,3 +513,19 @@ def test_parse_tracker_keeps_parentheses_before_a_link_title() -> None:
     )
     [row] = parse_tracker(text)
     assert row.url == "https://acme.example/jobs/engineer-(platform)"
+
+
+@pytest.mark.parametrize("title", ["'Acme Careers'", "(Acme Careers)"])
+def test_parse_tracker_accepts_other_link_title_forms(title: str) -> None:
+    text = (
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        f"| Acme | SWE | [Opening](https://acme.example/jobs/engineer-(platform) {title}) | skipped |\n"
+    )
+    [row] = parse_tracker(text)
+    assert row.url == "https://acme.example/jobs/engineer-(platform)"
+
+
+def test_url_key_keeps_query_order() -> None:
+    assert url_key("https://a.example/j?jobId=123&jobId=456") != url_key(
+        "https://a.example/j?jobId=456&jobId=123"
+    )

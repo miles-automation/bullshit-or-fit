@@ -697,11 +697,11 @@ def url_key(url: str | None) -> str | None:
                 return f"{provider}:{match.group(0)}"
     base = host + _APPLY_SUFFIX.sub("", path.rstrip("/"))
     try:
-        kept = sorted(
+        kept = [
             (k.lower(), v)
             for k, v in parse_qsl(parts.query)
             if not _TRACKING_PARAM.match(k.lower())
-        )
+        ]
     except ValueError:
         return base
     return f"{base}?{urlencode(kept)}" if kept else base
