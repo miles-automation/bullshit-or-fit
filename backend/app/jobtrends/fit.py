@@ -806,8 +806,7 @@ def fit_roles(
         postings,
     )
     roles: dict[tuple[str, str, str | None], FitRole] = {}
-    hidden: set[tuple[str, str, str | None]] = set()
-    hidden_roles: set[tuple[str, str]] = set()
+    hidden: set[tuple[str, str]] = set()
     for r in rows:
         if not (
             title_fits(r.title)
@@ -824,10 +823,7 @@ def fit_roles(
             continue
         key = (r.company_name.lower(), r.title.lower(), r.location)
         if decided.covers(r.company_name, r.title, r.url):
-            hidden.add(key)
-            hidden_roles.add(
-                (normalize_company(r.company_name), normalize_title(r.title))
-            )
+            hidden.add((normalize_company(r.company_name), normalize_title(r.title)))
             continue
         role = FitRole(
             source=r.source,
@@ -846,12 +842,7 @@ def fit_roles(
         current = roles.get(key)
         if current is None or rank_key(role) < rank_key(current):
             roles[key] = role
-    return FitList(
-        roles=sorted(
-            (role for key, role in roles.items() if key not in hidden), key=rank_key
-        ),
-        hidden=len(hidden_roles),
-    )
+    return FitList(roles=sorted(roles.values(), key=rank_key), hidden=len(hidden))
 
 
 def _pay(role: FitRole) -> str:

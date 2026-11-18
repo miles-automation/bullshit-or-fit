@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.jobtrends.fit import normalize_company, normalize_title, url_key
@@ -12,7 +12,8 @@ from app.jobtrends.models import FitDecision
 
 REQUIRED_COLUMNS = ("company", "role", "link", "status")
 _LINK = re.compile(
-    r"\]\(<?(https?://[^)>\s]+)>?\)|<(https?://[^>\s]+)>|(https?://[^\s)>]+)"
+    r"\]\(<(https?://[^>\s]+)>\)|\]\((https?://[^)\s]+)\)"
+    r"|<(https?://[^>\s]+)>|(https?://[^\s)>]+)"
 )
 _DIVIDER = re.compile(r"^\|?(?:\s*:?-+:?\s*\|)+\s*:?-*:?\s*$")
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
@@ -47,7 +48,7 @@ def _link(cell: str) -> str | None:
     match = _LINK.search(cell)
     if match is None:
         return None
-    return match.group(1) or match.group(2) or match.group(3)
+    return next(group for group in match.groups() if group)
 
 
 def parse_tracker(text: str) -> list[TrackerRow]:
@@ -55,6 +56,8 @@ def parse_tracker(text: str) -> list[TrackerRow]:
     header: list[str] | None = None
     for number, line in enumerate(text.splitlines(), start=1):
         if not line.lstrip().startswith("|"):
+            if header is not None and "|" in line:
+                raise TrackerError(f"line {number}: table row must start with |")
             header = None
             continue
         if _DIVIDER.match(line.strip()):
@@ -86,6 +89,14 @@ def parse_tracker(text: str) -> list[TrackerRow]:
     return rows
 
 
+def _identity(row: TrackerRow) -> tuple[str, str, str | None]:
+    return (
+        normalize_company(row.company),
+        normalize_title(row.title),
+        url_key(row.url),
+    )
+
+
 def sync_decisions(
     session: Session,
     rows: list[TrackerRow],
@@ -95,13 +106,19 @@ def sync_decisions(
 ) -> SyncSummary:
     moment = now or datetime.now(tz=UTC)
     session.execute(text("LOCK TABLE jobtrends.fit_decisions IN EXCLUSIVE MODE"))
-    current = session.scalar(select(func.count()).select_from(FitDecision)) or 0
-    removed = max(0, current - len(rows))
+    stored = {
+        (r.company_key, r.title_key, r.url_key)
+        for r in session.execute(
+            select(FitDecision.company_key, FitDecision.title_key, FitDecision.url_key)
+        ).all()
+    }
+    incoming = {_identity(row) for row in rows}
+    removed = len(stored - incoming)
     if removed and not allow_removals:
         session.rollback()
         raise TrackerError(
-            f"tracker has {len(rows)} rows but {current} decisions are stored; "
-            "pass --allow-removals to drop decisions"
+            f"{removed} stored decision(s) are missing from the tracker; "
+            "pass --allow-removals to drop them"
         )
     session.execute(delete(FitDecision))
     for row in rows:

@@ -4,7 +4,13 @@ from typing import Any
 
 import pytest
 
-from app.jobtrends.decisions import TrackerError, parse_tracker
+from app.jobtrends.decisions import (
+    SyncSummary,
+    TrackerError,
+    _identity,
+    parse_tracker,
+    sync_decisions,
+)
 from app.jobtrends.fit import (
     build_decided_index,
     fit_roles,
@@ -286,3 +292,79 @@ def test_format_fit_list_reports_hidden_roles() -> None:
     )
     text = format_fit_list(result.roles, 1, now=NOW, hidden=result.hidden)
     assert text.endswith("\n\nhidden: 0 roles already in the application tracker")
+
+
+def test_fit_roles_keeps_a_distinct_requisition_in_the_same_group() -> None:
+    tracked = _job()
+    twin = _job(url=OTHER_ASHBY)
+    session = _Session(
+        [tracked, twin],
+        [_posting(tracked), _posting(twin)],
+        [_stored(tracked.url, "Acme", "Senior Software Engineer")],
+    )
+    result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
+    assert [r.url for r in result.roles] == [OTHER_ASHBY]
+    assert result.hidden == 1
+
+
+def test_parse_tracker_rejects_a_row_without_a_leading_pipe() -> None:
+    text = TRACKER.replace("| NoLink |", "NoLink |")
+    with pytest.raises(TrackerError, match="start with"):
+        parse_tracker(text)
+
+
+def test_parse_tracker_keeps_parentheses_in_angle_links() -> None:
+    text = (
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        "| Acme | SWE | [Posting](<https://acme.test/jobs/engineer-(platform)>) | skipped |\n"
+    )
+    [row] = parse_tracker(text)
+    assert row.url == "https://acme.test/jobs/engineer-(platform)"
+
+
+class _SyncSession:
+    def __init__(self, stored: list[tuple[str, str, str | None]]) -> None:
+        self.stored = stored
+        self.rolled_back = False
+        self.added: list[Any] = []
+        self.committed = False
+
+    def execute(self, statement: object) -> _Result:
+        if (
+            "SELECT" in str(statement).upper()
+            and "FIT_DECISIONS" in str(statement).upper()
+        ):
+            return _Result(
+                [
+                    SimpleNamespace(company_key=c, title_key=t, url_key=u)
+                    for c, t, u in self.stored
+                ]
+            )
+        return _Result([])
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+    def add(self, row: Any) -> None:  # noqa: ANN401
+        self.added.append(row)
+
+    def commit(self) -> None:
+        self.committed = True
+
+
+def test_sync_refuses_a_swap_that_drops_a_decision() -> None:
+    a, b, c = parse_tracker(TRACKER)[:3]
+    session = _SyncSession([_identity(a), _identity(b)])
+    with pytest.raises(TrackerError, match="1 stored decision"):
+        sync_decisions(session, [a, c])  # type: ignore[arg-type]
+    assert session.rolled_back and not session.committed
+    summary = sync_decisions(session, [a, c], allow_removals=True)  # type: ignore[arg-type]
+    assert summary.removed == 1 and session.committed
+
+
+def test_sync_accepts_a_tracker_that_only_grows() -> None:
+    a, b, c = parse_tracker(TRACKER)[:3]
+    session = _SyncSession([_identity(a), _identity(b)])
+    summary = sync_decisions(session, [a, b, c])  # type: ignore[arg-type]
+    assert summary == SyncSummary(total=3, removed=0)
+    assert len(session.added) == 3
