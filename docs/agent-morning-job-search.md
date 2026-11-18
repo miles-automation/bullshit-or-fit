@@ -31,21 +31,26 @@ All documents carry a `schema` field. Readers must reject unknown schemas.
   role has `rank`, `role_id` (stable `ats_jobs.id`), `company_id`
   (`co:<normalized name>`), `listing_url`, `official_url` (null when the
   company's own posting is unknown), `pay`, `fit_reasons[]`, `gaps[]`,
-  `active_application_at_company`, and `posting_text` for the top ten.
-  The order is the text list's order.
-- `bof.morning/v1`: `shortlist[]` (at most three strong fits, or none),
-  `best_match`, `held[]` (companies with an active application),
+  `active_application_at_company` (informational; the tracker decides), and
+  `posting_text` for the top ten. The order is the text list's order.
+- `bof.morning/v1`: `shortlist[]` (at most three strong fits, one per
+  company, or none), `best_match` (a `role_id` or null), `held[]` (active
+  application at the company, or another of its roles is shortlisted),
   `suppressed[]` (tracker roles and owner skips), `not_strong`,
   `agent_suggestions[]` (shown, never applied), `rules`, `packet`.
 - `bof.fit-feedback/v1`, one JSON object per line: `id`, `role_id`,
-  `company_id`, `source`, `decision` (`skip_role`, `good_fit`,
-  `skip_company`, `note`), `reason`, `author`, `created_at`, `evidence`.
+  `company_id`, `url` (optional; role decisions follow it across sources),
+  `source`, `decision` (`skip_role`, `good_fit`, `skip_company`, `note`),
+  `reason`, `author`, `created_at`, `evidence`.
   Owner records live in `owner-feedback.jsonl`, agent suggestions in
   `agent-suggestions.jsonl`; the file decides the kind, not a field.
 - `bof.claim/v1`: `id`, `text`, `evidence`, `verification`
   (`verified`, `unverified`), `confidential`, `employer`, `tags`.
 - `bof.answer/v1`: `id`, `kind` (`owner_writing`, `approved_final`,
-  `sent`), `text`, `source`, `question`.
+  `sent`), `text`, `source`, `question`, `confidential`.
+- Mail status items: `date`, `source_ref` (folder:uid), `company`, `status`,
+  `kind` (`automated_receipt`, `automated_notice`, `possible_human_reply`).
+- Published documents carry `kind` equal to `schema`; `latest` filters on it.
 
 ## Rules the tools enforce
 
@@ -54,7 +59,9 @@ All documents carry a `schema` field. Readers must reject unknown schemas.
   one active application per company.
 - `skip_role` hides one role. Only `skip_company` hides a company.
 - Owner feedback written by any author other than the owner must quote the
-  owner's words in `evidence`, or it is refused.
+  owner's words in `evidence`, or it is refused. The CLI refuses the owner's
+  author name. The tools cannot verify identity; the rule is a convention.
+- Morning documents never include owner evidence.
 - Agent suggestions never change the shortlist.
 - A strong fit has an official posting URL, listed pay, and a listing on
   the company's own site.

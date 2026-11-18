@@ -434,8 +434,8 @@ def format_morning(document: dict[str, Any]) -> str:
                 f"   agent suggestion (not applied): {s['author']} {s['decision']}: {s['reason']}"
             )
     lines.append(
-        f"held for active applications: {len(document['held'])}; suppressed: "
-        f"{len(document['suppressed'])}; not strong enough: {document['not_strong']}"
+        f"held (active application or another role at the company): {len(document['held'])}; "
+        f"suppressed: {len(document['suppressed'])}; not strong enough: {document['not_strong']}"
     )
     for h in document["held"]:
         lines.append(f"  held: {h['company_name']}: {h['title']} ({h['reason']})")
