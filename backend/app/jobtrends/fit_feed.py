@@ -7,6 +7,7 @@ import httpx
 
 DEFAULT_BASE_URL = "https://sparkswarm.com"
 BODY_LIMIT = 7500
+PAGE_SIZE = 500
 
 
 class FeedError(RuntimeError):
@@ -55,7 +56,7 @@ def publish(
             "body": summary_line(document),
             "author": author,
             "author_type": "agent",
-            "comment_metadata": document,
+            "comment_metadata": {**document, "kind": document.get("schema")},
         },
     )
     if response.status_code != 201:
@@ -72,14 +73,22 @@ def latest(
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
     http = client or _client(api_key, base_url)
-    response = http.get(f"/api/v1/tasks/{task_id}/comments")
-    if response.status_code != 200:
-        raise FeedError(f"read failed: HTTP {response.status_code}")
-    matches = [
-        c
-        for c in response.json().get("comments", [])
-        if (c.get("comment_metadata") or {}).get("schema") == schema
-    ]
+    matches: list[dict[str, Any]] = []
+    after: int | None = None
+    while True:
+        params: dict[str, Any] = {"limit": PAGE_SIZE, "kinds": schema}
+        if after is not None:
+            params["after_comment_id"] = after
+        response = http.get(f"/api/v1/tasks/{task_id}/comments", params=params)
+        if response.status_code != 200:
+            raise FeedError(f"read failed: HTTP {response.status_code}")
+        page = response.json().get("comments", [])
+        matches.extend(
+            c for c in page if (c.get("comment_metadata") or {}).get("schema") == schema
+        )
+        if len(page) < PAGE_SIZE:
+            break
+        after = max(int(c["id"]) for c in page)
     if not matches:
         raise FeedError(f"no {schema} document on task {task_id}")
     newest = max(matches, key=lambda c: (c["created_at"], c["id"]))
@@ -87,5 +96,7 @@ def latest(
         "comment_id": newest["id"],
         "posted_at": newest["created_at"],
         "posted_by": newest.get("author"),
-        "document": newest["comment_metadata"],
+        "document": {
+            k: v for k, v in newest["comment_metadata"].items() if k != "kind"
+        },
     }

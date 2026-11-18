@@ -166,9 +166,10 @@ def _fb(home: Path, **kw: Any) -> tuple[str, bool]:  # noqa: ANN401
         company="co:acme",
         decision="skip_role",
         reason="not engineering",
-        author="rich",
+        author="claude-code",
         source="ats",
         role_id="ats:greenhouse:acme:1",
+        evidence='Rich, 2026-11-18 chat: "skip that one"',
         now=NOW,
     )
     base.update(kw)
@@ -192,14 +193,13 @@ def test_feedback_append_is_idempotent_and_never_rewrites(tmp_path: Path) -> Non
 def test_agent_cannot_write_owner_feedback_without_the_owners_words(
     tmp_path: Path,
 ) -> None:
-    with pytest.raises(RecordError, match="owner's words"):
-        _fb(tmp_path, author="claude-code")
+    for evidence in (None, "   ", "Rich said so", '"ok"'):
+        with pytest.raises(RecordError, match="owner's quoted words"):
+            _fb(tmp_path, evidence=evidence)
+    with pytest.raises(RecordError, match="reserved"):
+        _fb(tmp_path, author=" Rich ")
     assert not (tmp_path / "owner-feedback.jsonl").exists()
-    _fb(
-        tmp_path,
-        author="claude-code",
-        evidence='Rich, 2026-11-18 chat: "skip that one"',
-    )
+    _fb(tmp_path)
 
 
 def test_owner_kind_claimed_in_the_agent_file_stays_a_suggestion(
@@ -481,3 +481,143 @@ def test_newer_owner_feedback_supersedes_an_agent_suggestion(tmp_path: Path) -> 
         role["superseded_suggestions"][0]["reason"] == "crypto company, probably skip"
     )
     assert role["owner_notes"][0]["reason"] == "fine if it's a good fit"
+
+
+def test_rich_can_hand_write_owner_records_without_evidence(tmp_path: Path) -> None:
+    (tmp_path / "owner-feedback.jsonl").write_text(
+        json.dumps(
+            {
+                "schema": "bof.fit-feedback/v1",
+                "company_id": "co:acme",
+                "role_id": "r1",
+                "decision": "skip_role",
+                "reason": "no",
+                "author": "rich",
+                "source": "ats",
+                "created_at": NOW.isoformat(),
+            }
+        )
+    )
+    [record] = load_feedback(tmp_path)
+    assert record.author_kind == OWNER
+    _fb(tmp_path, reason="another")
+    assert len(load_feedback(tmp_path)) == 2
+
+
+def test_owner_role_skip_follows_the_posting_across_sources(tmp_path: Path) -> None:
+    url = "https://job-boards.greenhouse.io/acme/jobs/1"
+    _fb(tmp_path, role_id="himalayas:acme:x", url=url)
+    morning = shortlist(_export(_role()), [], load_feedback(tmp_path))
+    assert morning.shortlist == []
+    assert "owner skipped this role" in morning.suppressed[0]["reason"]
+
+
+def test_tracker_not_a_stale_export_decides_active_companies() -> None:
+    tracker = parse_tracker(
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        "| Acme | Old role | none | rejected |\n"
+    )
+    morning = shortlist(_export(_role(), active=frozenset({"co:acme"})), tracker, [])
+    assert [r["role_id"] for r in morning.shortlist] == ["ats:greenhouse:acme:1"]
+    assert morning.held == []
+
+
+def test_suggestions_on_suppressed_roles_are_still_reported(tmp_path: Path) -> None:
+    _fb(
+        tmp_path,
+        kind=AGENT,
+        decision="note",
+        reason="weak",
+        evidence=None,
+    )
+    _fb(tmp_path, now=datetime(2026, 11, 18, 15, tzinfo=UTC))
+    morning = shortlist(_export(_role()), [], load_feedback(tmp_path))
+    [entry] = morning.suppressed
+    assert entry["superseded_suggestions"][0]["reason"] == "weak"
+
+
+def test_published_morning_document_carries_no_owner_evidence(tmp_path: Path) -> None:
+    _fb(tmp_path, decision="note", role_id=None, reason="fine if good")
+    morning = shortlist(_export(_role()), [], load_feedback(tmp_path))
+    doc = morning_document(morning, _export(_role()), source={}, now=NOW)
+    text = json.dumps(doc)
+    assert "fine if good" in text
+    assert "skip that one" not in text
+
+
+def test_append_repairs_a_missing_final_newline(tmp_path: Path) -> None:
+    _fb(tmp_path)
+    path = tmp_path / "owner-feedback.jsonl"
+    path.write_text(path.read_text().rstrip("\n"))
+    _fb(tmp_path, reason="second")
+    assert len(load_feedback(tmp_path)) == 2
+
+
+def test_answers_with_held_figures_or_confidential_flags_are_not_offered(
+    tmp_path: Path,
+) -> None:
+    claims = load_claims(_write(tmp_path / "claims.jsonl", CLAIMS))
+    answers = load_answers(
+        _write(
+            tmp_path / "answers.jsonl",
+            [
+                {**ANSWERS[0], "id": "a-leak", "text": "We cut cost 50% last year."},
+                {**ANSWERS[0], "id": "a-conf", "confidential": True},
+                ANSWERS[0],
+            ],
+        )
+    )
+    role = _export(_role())["roles"][0]
+    packet = build_packet(role, None, claims, answers, tmp_path / "p", now=NOW)
+    voice = packet.read_text().split("## Voice and approved wording")[1]
+    voice = voice.split("## Sent")[0]
+    assert "[a-own]" in voice
+    assert "a-leak" not in voice and "a-conf" not in voice
+
+
+def test_latest_pages_through_every_comment() -> None:
+    comments = [
+        {
+            "id": i,
+            "body": "x",
+            "created_at": "2026-11-19T00:00:00Z"
+            if i == 600
+            else "2026-11-18T00:00:00Z",
+            "comment_metadata": {"schema": EXPORT_SCHEMA, "n": i},
+        }
+        for i in range(1, 601)
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        after = int(request.url.params.get("after_comment_id", 0))
+        limit = int(request.url.params["limit"])
+        assert request.url.params["kinds"] == EXPORT_SCHEMA
+        page = [c for c in comments if c["id"] > after][:limit]
+        return httpx.Response(200, json={"comments": page, "total": len(page)})
+
+    client = httpx.Client(
+        base_url="https://ss.test", transport=httpx.MockTransport(handler)
+    )
+    assert latest(5, EXPORT_SCHEMA, client=client)["document"]["n"] == 600
+
+
+def test_latest_out_refuses_to_replace_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.jobtrends import morning_cli
+
+    def fake_latest(*_args: Any, **_kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+        return {"comment_id": 1, "posted_at": "t", "posted_by": "x", "document": {}}
+
+    monkeypatch.setattr(morning_cli, "latest", fake_latest)
+    target = tmp_path / "tracker.md"
+    target.write_text("keep me")
+    assert morning_cli.main(["latest", "--task", "1", "--out", str(target)]) == 1
+    assert target.read_text() == "keep me"
+
+
+def test_mail_status_reads_escaped_pipes() -> None:
+    row = "| 2026-11-08 09:00Z | INBOX | 2300 | Sun | Sam <sam@acme.com> | Acme \\| Next steps |\n"
+    items = mail_status(LOG + row, ["Acme"])
+    assert items[-1]["source_ref"] == "INBOX:2300"
+    assert items[-1]["kind"] == "possible_human_reply"

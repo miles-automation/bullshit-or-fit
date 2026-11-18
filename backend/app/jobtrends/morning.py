@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import re
@@ -9,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.jobtrends.decisions import TrackerRow
+from app.jobtrends.decisions import TrackerRow, _cells
 from app.jobtrends.fit import (
     ACTIVE_APPLICATION_STATUSES,
     build_decided_index,
@@ -55,6 +56,7 @@ class Feedback:
     author_kind: str
     created_at: str
     evidence: str | None = None
+    url: str | None = None
 
 
 def feedback_id(
@@ -83,43 +85,50 @@ def _read_jsonl(path: Path, schema: str) -> list[tuple[int, dict[str, Any]]]:
     return records
 
 
-def _feedback(path: Path, kind: str) -> list[Feedback]:
-    items: list[Feedback] = []
-    for number, r in _read_jsonl(path, FEEDBACK_SCHEMA):
-        where = f"{path.name}:{number}"
-        decision = r.get("decision")
-        if decision not in DECISIONS:
-            raise RecordError(f"{where}: decision must be one of {sorted(DECISIONS)}")
-        company = r.get("company_id") or ""
-        if not company.startswith("co:"):
-            raise RecordError(f"{where}: company_id must start with co:")
-        role = r.get("role_id")
-        if decision in {"skip_role", "good_fit"} and not role:
-            raise RecordError(f"{where}: {decision} needs a role_id")
-        author = (r.get("author") or "").strip()
-        reason = (r.get("reason") or "").strip()
-        if not author or not reason or not r.get("created_at"):
-            raise RecordError(f"{where}: author, reason and created_at are required")
-        evidence = r.get("evidence")
-        if kind == OWNER and author != OWNER_AUTHOR and not evidence:
+_QUOTE = re.compile(r"[\"\u201c\u201d]")
+MIN_EVIDENCE = 12
+
+
+def _validate(r: dict[str, Any], where: str, kind: str) -> Feedback:
+    decision = r.get("decision")
+    if decision not in DECISIONS:
+        raise RecordError(f"{where}: decision must be one of {sorted(DECISIONS)}")
+    company = r.get("company_id") or ""
+    if not company.startswith("co:"):
+        raise RecordError(f"{where}: company_id must start with co:")
+    role = r.get("role_id")
+    if decision in {"skip_role", "good_fit"} and not role:
+        raise RecordError(f"{where}: {decision} needs a role_id")
+    author = (r.get("author") or "").strip()
+    reason = (r.get("reason") or "").strip()
+    if not author or not reason or not r.get("created_at"):
+        raise RecordError(f"{where}: author, reason and created_at are required")
+    evidence = (r.get("evidence") or "").strip() or None
+    if kind == OWNER and author != OWNER_AUTHOR:
+        if not evidence or len(evidence) < MIN_EVIDENCE or not _QUOTE.search(evidence):
             raise RecordError(
-                f"{where}: owner feedback written by {author} needs the owner's words in evidence"
+                f"{where}: owner feedback written by {author} needs the owner's quoted words in evidence"
             )
-        items.append(
-            Feedback(
-                id=r.get("id") or feedback_id(role, company, decision, reason, author),
-                role_id=role,
-                company_id=company,
-                source=r.get("source") or "unknown",
-                decision=decision,
-                reason=reason,
-                author=author,
-                author_kind=kind,
-                created_at=r["created_at"],
-                evidence=evidence,
-            )
-        )
-    return items
+    return Feedback(
+        id=r.get("id") or feedback_id(role, company, decision, reason, author),
+        role_id=role,
+        company_id=company,
+        source=r.get("source") or "unknown",
+        decision=decision,
+        reason=reason,
+        author=author,
+        author_kind=kind,
+        created_at=r["created_at"],
+        evidence=evidence,
+        url=r.get("url"),
+    )
+
+
+def _feedback(path: Path, kind: str) -> list[Feedback]:
+    return [
+        _validate(r, f"{path.name}:{number}", kind)
+        for number, r in _read_jsonl(path, FEEDBACK_SCHEMA)
+    ]
 
 
 def load_feedback(directory: Path) -> list[Feedback]:
@@ -138,11 +147,16 @@ def append_feedback(
     author: str,
     source: str,
     role_id: str | None = None,
+    url: str | None = None,
     evidence: str | None = None,
     now: datetime | None = None,
 ) -> tuple[str, bool]:
     if kind not in {OWNER, AGENT}:
         raise RecordError("kind must be owner or agent")
+    if author.strip().lower() == OWNER_AUTHOR:
+        raise RecordError(
+            f"author {OWNER_AUTHOR!r} is reserved for Rich's own edits; use your agent name"
+        )
     path = directory / (OWNER_FILE if kind == OWNER else AGENT_FILE)
     record_id = feedback_id(role_id, company, decision, reason, author)
     record = {
@@ -150,25 +164,26 @@ def append_feedback(
         "id": record_id,
         "role_id": role_id,
         "company_id": company,
+        "url": url,
         "source": source,
         "decision": decision,
         "reason": reason.strip(),
-        "author": author,
+        "author": author.strip(),
         "created_at": (now or datetime.now(tz=UTC)).isoformat(),
-        "evidence": evidence,
+        "evidence": (evidence or "").strip() or None,
     }
-    existing = {f.id for f in _feedback(path, kind)}
-    if record_id in existing:
-        return record_id, False
+    _validate(record, "new record", kind)
     directory.mkdir(parents=True, exist_ok=True)
-    trial = directory / f".{path.name}.check"
-    trial.write_text(json.dumps(record) + "\n")
-    try:
-        _feedback(trial, kind)
-    finally:
-        trial.unlink()
-    with path.open("a") as handle:
+    with path.open("a+") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        handle.seek(0)
+        text = handle.read()
+        if record_id in {f.id for f in _feedback(path, kind)}:
+            return record_id, False
+        if text and not text.endswith("\n"):
+            handle.write("\n")
         handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.flush()
     return record_id, True
 
 
@@ -209,6 +224,31 @@ def _brief(role: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _suggestions(
+    role: dict[str, Any],
+    by_role: dict[str, list[Feedback]],
+    owner_by_target: dict[str, list[Feedback]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    suggestions: list[dict[str, Any]] = []
+    superseded: list[dict[str, Any]] = []
+    for f in by_role.get(role["role_id"], []) + by_role.get(role["company_id"], []):
+        target = f.role_id or f.company_id
+        newer = [
+            o for o in owner_by_target.get(target, []) if o.created_at >= f.created_at
+        ]
+        item = {
+            "id": f.id,
+            "author": f.author,
+            "decision": f.decision,
+            "reason": f.reason,
+        }
+        if newer:
+            superseded.append({**item, "superseded_by": newer[-1].id})
+        else:
+            suggestions.append(item)
+    return suggestions, superseded
+
+
 def shortlist(
     export: dict[str, Any],
     tracker: list[TrackerRow],
@@ -241,9 +281,12 @@ def shortlist(
         if row.status in ACTIVE_APPLICATION_STATUSES:
             cid = company_id(row.company)
             active_count[cid] = active_count.get(cid, 0) + 1
-    for cid in export.get("active_application_companies", []):
-        active_count[cid] = max(active_count.get(cid, 0), 1)
     owner = _latest_owner(feedback)
+    owner_by_url: dict[str, Feedback] = {}
+    for f in sorted(feedback, key=lambda f: f.created_at):
+        if f.author_kind == OWNER and f.decision in {"skip_role", "good_fit"}:
+            for key in posting_keys(f.url):
+                owner_by_url[key] = f
     owner_by_target: dict[str, list[Feedback]] = {}
     by_role: dict[str, list[Feedback]] = {}
     for f in feedback:
@@ -257,17 +300,31 @@ def shortlist(
         keys = posting_keys(role.get("official_url")) | posting_keys(
             role.get("listing_url")
         )
+        suggestions, superseded = _suggestions(role, by_role, owner_by_target)
+        notes = {"agent_suggestions": suggestions, "superseded_suggestions": superseded}
+        if suggestions or superseded:
+            morning.suggestions.append({**_brief(role), **notes})
         if decided.covers(role["company_name"], role["title"], keys):
             morning.suppressed.append(
-                {**_brief(role), "reason": "already in the application tracker"}
+                {
+                    **_brief(role),
+                    **notes,
+                    "reason": "already in the application tracker",
+                }
             )
             continue
-        role_fb = owner.get(role["role_id"])
+        by_url = [owner_by_url[k] for k in sorted(keys) if k in owner_by_url]
+        role_fb = max(
+            [f for f in [owner.get(role["role_id"]), *by_url] if f],
+            key=lambda f: f.created_at,
+            default=None,
+        )
         company_fb = owner.get(cid)
         if role_fb and role_fb.decision == "skip_role":
             morning.suppressed.append(
                 {
                     **_brief(role),
+                    **notes,
                     "reason": f"owner skipped this role: {role_fb.reason}",
                     "feedback_id": role_fb.id,
                 }
@@ -277,6 +334,7 @@ def shortlist(
             morning.suppressed.append(
                 {
                     **_brief(role),
+                    **notes,
                     "reason": f"owner skipped this company: {company_fb.reason}",
                     "feedback_id": company_fb.id,
                 }
@@ -286,61 +344,23 @@ def shortlist(
             morning.held.append(
                 {
                     **_brief(role),
+                    **notes,
                     "reason": f"active application at this company (limit {max_active})",
                 }
             )
             continue
-        owner_items = owner_by_target.get(role["role_id"], []) + owner_by_target.get(
-            cid, []
-        )
-        suggestions: list[dict[str, Any]] = []
-        superseded: list[dict[str, Any]] = []
-        for f in by_role.get(role["role_id"], []) + by_role.get(cid, []):
-            target = f.role_id or f.company_id
-            newer = [
-                o
-                for o in owner_by_target.get(target, [])
-                if o.created_at >= f.created_at
-            ]
-            item = {
-                "id": f.id,
-                "author": f.author,
-                "decision": f.decision,
-                "reason": f.reason,
-            }
-            if newer:
-                superseded.append({**item, "superseded_by": newer[-1].id})
-            else:
-                suggestions.append(item)
         owner_notes = [
-            {
-                "id": o.id,
-                "decision": o.decision,
-                "reason": o.reason,
-                "evidence": o.evidence,
-            }
-            for o in owner_items
+            {"id": o.id, "reason": o.reason}
+            for o in owner_by_target.get(role["role_id"], [])
+            + owner_by_target.get(cid, [])
             if o.decision == "note"
         ]
-        if suggestions or superseded:
-            morning.suggestions.append(
-                {**_brief(role), "suggestions": suggestions, "superseded": superseded}
-            )
         if not strong_fit(role):
             morning.not_strong += 1
             continue
         boost = 0 if role_fb and role_fb.decision == "good_fit" else 1
         candidates.append(
-            (
-                boost,
-                role["rank"],
-                {
-                    **role,
-                    "agent_suggestions": suggestions,
-                    "superseded_suggestions": superseded,
-                    "owner_notes": owner_notes,
-                },
-            )
+            (boost, role["rank"], {**role, **notes, "owner_notes": owner_notes})
         )
     seen: set[str] = set()
     for _, _, role in sorted(candidates, key=lambda c: (c[0], c[1])):
@@ -442,6 +462,7 @@ class Answer:
     text: str
     source: str
     question: str | None
+    confidential: bool = False
 
 
 def load_claims(path: Path) -> list[Claim]:
@@ -479,13 +500,40 @@ def load_answers(path: Path) -> list[Answer]:
         if not r.get("id") or not r.get("text") or not r.get("source"):
             raise RecordError(f"{path.name}:{number}: id, text and source are required")
         answers.append(
-            Answer(r["id"], r["kind"], r["text"], r["source"], r.get("question"))
+            Answer(
+                r["id"],
+                r["kind"],
+                r["text"],
+                r["source"],
+                r.get("question"),
+                bool(r.get("confidential", False)),
+            )
         )
     return answers
 
 
 def draftable(claim: Claim) -> bool:
     return claim.verification == "verified" and not claim.confidential
+
+
+_FIGURE = re.compile(r"\d[\d,.]*\s*(?:%|x|k|m|b|gb|ms|s)?\b", re.I)
+
+
+def _figures(text: str) -> set[str]:
+    return {
+        f.replace(" ", "").lower() for f in _FIGURE.findall(text) if len(f.strip()) >= 2
+    }
+
+
+def usable_answers(answers: list[Answer], claims: list[Claim]) -> list[Answer]:
+    held = set().union(*[_figures(c.text) for c in claims if not draftable(c)])
+    return [
+        a
+        for a in answers
+        if a.kind in DRAFT_ANSWER_KINDS
+        and not a.confidential
+        and not (_figures(a.text) & held)
+    ]
 
 
 _WORD = re.compile(r"[a-z][a-z0-9+#.]{2,}")
@@ -572,8 +620,7 @@ def build_packet(
         "## Voice and approved wording",
         *[
             f"- [{a.id}] ({a.kind}) {a.text[:300]}"
-            for a in answers
-            if a.kind in DRAFT_ANSWER_KINDS
+            for a in usable_answers(answers, claims)
         ],
         "",
         "## Sent answers (reference only, not approved word for word)",
@@ -585,7 +632,11 @@ def build_packet(
         "",
     ]
     folder.mkdir(parents=True, exist_ok=True)
-    packet.write_text("\n".join(lines))
+    try:
+        with packet.open("x") as handle:
+            handle.write("\n".join(lines))
+    except FileExistsError:
+        pass
     return packet
 
 
@@ -605,7 +656,9 @@ def mail_status(log_text: str, companies: list[str]) -> list[dict[str, Any]]:
     ]
     items: list[dict[str, Any]] = []
     for line in log_text.splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = _cells(line)
         if len(cells) != 6 or not cells[2].isdigit():
             continue
         found, folder, uid, _date, sender, subject = cells

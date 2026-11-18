@@ -47,7 +47,10 @@ def _cmd_latest(args: argparse.Namespace) -> int:
     found = latest(args.task, args.schema)
     payload = json.dumps(found, indent=2)
     if args.out:
-        Path(args.out).write_text(payload)
+        target = Path(args.out)
+        if target.exists() and not args.force:
+            raise RecordError(f"{target} exists; pass --force to replace it")
+        target.write_text(payload)
         print(  # noqa: T201
             f"wrote comment {found['comment_id']} ({found['posted_at']}, by {found['posted_by']}) to {args.out}"
         )
@@ -111,6 +114,7 @@ def _cmd_feedback(args: argparse.Namespace) -> int:
         kind=args.kind,
         company=args.company_id,
         role_id=args.role_id,
+        url=args.url,
         decision=args.decision,
         reason=args.reason,
         author=args.author,
@@ -150,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     p_latest.add_argument("--task", type=int, required=True)
     p_latest.add_argument("--schema", default=EXPORT_SCHEMA)
     p_latest.add_argument("--out")
+    p_latest.add_argument("--force", action="store_true")
 
     p_run = sub.add_parser(
         "run", help="shortlist, hold and suppress, build one unsent packet"
@@ -169,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fb.add_argument("--kind", choices=["owner", "agent"], required=True)
     p_fb.add_argument("--company-id", required=True)
     p_fb.add_argument("--role-id")
+    p_fb.add_argument("--url", help="official or listing URL of the role")
     p_fb.add_argument("--decision", choices=sorted(DECISIONS), required=True)
     p_fb.add_argument("--reason", required=True)
     p_fb.add_argument("--author", required=True)

@@ -29,7 +29,7 @@ _NON_ENGINEERING_MANAGER = re.compile(
     re.I,
 )
 _EXCLUDED_ROLE = re.compile(
-    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp|vice president"
+    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp|vice\s+president"
     r"|recruit\w*|sales|account|support|qa|test|tester|mechanical|electrical|hardware"
     r"|firmware|embedded|ios|android|mobile|network|civil|structural|field|clinical"
     r"|security|leader|customer|solutions|sales engineer|construction)\b",
@@ -869,11 +869,14 @@ def fit_roles(
     index = first_party_index([(r.company_name, r.title) for r in first_party])
     official: dict[tuple[str, str], tuple[str, datetime | None]] = {}
     for r in first_party:
-        if r.url:
-            official.setdefault(
-                (normalize_company(r.company_name), normalize_title(r.title)),
-                (r.url, r.posted_at),
-            )
+        if not r.url:
+            continue
+        role_key = (normalize_company(r.company_name), normalize_title(r.title))
+        best = official.get(role_key)
+        if best is None or (
+            best[1] is not None and (r.posted_at is None or r.posted_at > best[1])
+        ):
+            official[role_key] = (r.url, r.posted_at)
     decision_rows = session.execute(
         select(
             FitDecision.url_key,
