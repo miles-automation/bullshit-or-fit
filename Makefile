@@ -1,4 +1,4 @@
-.PHONY: install dev dev-backend dev-frontend test lint format format-check typecheck check build migrate new-migration jobtrends-ingest jobtrends-worker
+.PHONY: install dev dev-backend dev-frontend test lint format format-check typecheck check build migrate new-migration jobtrends-ingest jobtrends-worker fit-decisions-sync
 
 install:
 	cd backend && uv sync --dev
@@ -45,6 +45,14 @@ jobtrends-ingest:
 
 jobtrends-worker:
 	cd backend && PYTHONPATH=. uv run python -m app.jobtrends.worker
+
+PROD_HOST ?= root@159.65.241.127
+INGEST_CONTAINER ?= platform-infra-bullshit-or-fit-ingest-1
+TRACKER ?= ../../research/job-search/tracker.md
+
+fit-decisions-sync:
+	test -f "$(TRACKER)"
+	ssh $(PROD_HOST) docker exec -i -w /app $(INGEST_CONTAINER) .venv/bin/python -m app.jobtrends.cli fit-decisions-sync - < "$(TRACKER)"
 
 build:
 	docker build --platform linux/amd64 -t ghcr.io/miles-automation/bullshit-or-fit:latest .

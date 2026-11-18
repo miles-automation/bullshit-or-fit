@@ -3,13 +3,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.jobtrends.ats import SOURCE_ATS, SOURCE_REMOTE
 from app.jobtrends.himalayas import SOURCE_HIMALAYAS
-from app.jobtrends.models import AtsJob, DiscoveredBoard
+from app.jobtrends.models import AtsJob, DiscoveredBoard, FitDecision
 
 FIT_SOURCES = (SOURCE_ATS, SOURCE_REMOTE, SOURCE_HIMALAYAS, "commute_shed", "adzuna")
 MIN_COMP_MAX = 150_000
@@ -658,13 +659,69 @@ def is_traceable(
     return normalize_title(title) in index.get(normalize_company(company), set())
 
 
+_GREENHOUSE_JOB = re.compile(r"/jobs/(\d+)")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_APPLY_SUFFIX = re.compile(r"/(?:application|apply)$")
+
+
+def url_key(url: str | None) -> str | None:
+    if not url or not url.strip():
+        return None
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower().removeprefix("www.")
+    if not host:
+        return None
+    path = parts.path.lower()
+    gh_jid = parse_qs(parts.query).get("gh_jid")
+    if gh_jid:
+        return f"greenhouse:{gh_jid[0]}"
+    if host.endswith("greenhouse.io"):
+        match = _GREENHOUSE_JOB.search(path)
+        if match:
+            return f"greenhouse:{match.group(1)}"
+    for suffix, provider in (("ashbyhq.com", "ashby"), ("lever.co", "lever")):
+        if host.endswith(suffix):
+            match = _UUID.search(path)
+            if match:
+                return f"{provider}:{match.group(0)}"
+    return host + _APPLY_SUFFIX.sub("", path.rstrip("/"))
+
+
+@dataclass(frozen=True)
+class DecidedIndex:
+    url_keys: frozenset[str] = frozenset()
+    roles: frozenset[tuple[str, str]] = frozenset()
+
+    def covers(self, company: str, title: str, url: str | None) -> bool:
+        key = url_key(url)
+        if key is not None and key in self.url_keys:
+            return True
+        return (normalize_company(company), normalize_title(title)) in self.roles
+
+
+def decided_index(session: Session) -> DecidedIndex:
+    rows = session.execute(
+        select(FitDecision.url_key, FitDecision.company_key, FitDecision.title_key)
+    ).all()
+    return DecidedIndex(
+        url_keys=frozenset(r.url_key for r in rows if r.url_key),
+        roles=frozenset((r.company_key, r.title_key) for r in rows),
+    )
+
+
+@dataclass(frozen=True)
+class FitList:
+    roles: list[FitRole]
+    hidden: int = 0
+
+
 def fit_roles(
     session: Session,
     *,
     days: int = 1,
     max_age_days: int = MAX_POSTING_AGE_DAYS,
     now: datetime | None = None,
-) -> list[FitRole]:
+) -> FitList:
     moment = now or datetime.now(tz=UTC)
     since = moment - timedelta(days=days)
     oldest = moment - timedelta(days=max_age_days)
@@ -709,7 +766,9 @@ def fit_roles(
             ).all()
         ]
     )
+    decided = decided_index(session)
     roles: dict[tuple[str, str, str | None], FitRole] = {}
+    hidden: set[tuple[str, str, str | None]] = set()
     for r in rows:
         if not (
             title_fits(r.title)
@@ -723,6 +782,10 @@ def fit_roles(
             continue
         clearance = clearance_status(f"{r.title}\n{r.content_text}")
         if clearance == CLEARANCE_REQUIRED:
+            continue
+        key = (r.company_name.lower(), r.title.lower(), r.location)
+        if decided.covers(r.company_name, r.title, r.url):
+            hidden.add(key)
             continue
         role = FitRole(
             source=r.source,
@@ -738,11 +801,15 @@ def fit_roles(
             posted_at=r.posted_at,
             traceable=is_traceable(r.source, r.company_name, r.title, index),
         )
-        key = (role.company_name.lower(), role.title.lower(), role.location)
         current = roles.get(key)
         if current is None or rank_key(role) < rank_key(current):
             roles[key] = role
-    return sorted(roles.values(), key=rank_key)
+    return FitList(
+        roles=sorted(
+            (role for key, role in roles.items() if key not in hidden), key=rank_key
+        ),
+        hidden=len(hidden),
+    )
 
 
 def _pay(role: FitRole) -> str:
@@ -759,12 +826,18 @@ def _age(role: FitRole, now: datetime) -> str:
     return f"{label} today" if days == 0 else f"{label} {days}d ago"
 
 
+def _hidden_line(hidden: int) -> str:
+    noun = "role" if hidden == 1 else "roles"
+    return f"hidden: {hidden} {noun} already applied to or skipped"
+
+
 def format_fit_list(
-    roles: list[FitRole], days: int, now: datetime | None = None
+    roles: list[FitRole], days: int, now: datetime | None = None, hidden: int = 0
 ) -> str:
     moment = now or datetime.now(tz=UTC)
     if not roles:
-        return f"no new fitting roles in the last {days} day(s)"
+        empty = f"no new fitting roles in the last {days} day(s)"
+        return f"{empty}\n{_hidden_line(hidden)}" if hidden else empty
     lines = [f"{len(roles)} new fitting roles in the last {days} day(s)", ""]
     for r in roles:
         size = f", {r.team_size} people" if r.team_size is not None else ""
@@ -775,4 +848,6 @@ def format_fit_list(
         if not r.traceable:
             tag += " [not on company site]"
         lines.append(f"  {r.url or 'no link'}  [{r.source}]{tag}")
+    if hidden:
+        lines.extend(["", _hidden_line(hidden)])
     return "\n".join(lines)
