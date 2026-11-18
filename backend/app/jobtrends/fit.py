@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
@@ -662,6 +662,9 @@ def is_traceable(
 _GREENHOUSE_JOB = re.compile(r"/jobs/(\d+)")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _APPLY_SUFFIX = re.compile(r"/(?:application|apply)$")
+_TRACKING_PARAM = re.compile(
+    r"^(?:utm_\w+|gh_src|src|source|ref|lever-source|lever-origin)$"
+)
 PROVIDER_KEY_PREFIXES = ("greenhouse:", "ashby:", "lever:")
 
 
@@ -692,7 +695,16 @@ def url_key(url: str | None) -> str | None:
             match = _UUID.search(path)
             if match:
                 return f"{provider}:{match.group(0)}"
-    return host + _APPLY_SUFFIX.sub("", path.rstrip("/"))
+    base = host + _APPLY_SUFFIX.sub("", path.rstrip("/"))
+    try:
+        kept = sorted(
+            (k.lower(), v)
+            for k, v in parse_qsl(parts.query)
+            if not _TRACKING_PARAM.match(k.lower())
+        )
+    except ValueError:
+        return base
+    return f"{base}?{urlencode(kept)}" if kept else base
 
 
 def is_provider_key(key: str | None) -> bool:
@@ -723,25 +735,38 @@ class DecidedIndex:
         return role in self.requisition_roles and not any(map(is_provider_key, keys))
 
 
+def _linked_keys(
+    seed: set[str], postings: list[tuple[str, str, frozenset[str]]]
+) -> tuple[set[str], list[tuple[str, str]]]:
+    keys = set(seed)
+    matched: dict[int, tuple[str, str]] = {}
+    grew = bool(keys)
+    while grew:
+        grew = False
+        for i, (company, title, own) in enumerate(postings):
+            if i not in matched and own & keys:
+                matched[i] = (normalize_company(company), normalize_title(title))
+                if not own <= keys:
+                    keys |= own
+                    grew = True
+    return keys, list(matched.values())
+
+
 def build_decided_index(
     decisions: list[tuple[str | None, str, str]],
     postings: list[tuple[str, str, frozenset[str]]],
 ) -> DecidedIndex:
-    keys = frozenset(key for key, _, _ in decisions if key)
+    url_keys: set[str] = set()
     roles: set[tuple[str, str]] = set()
     requisition_roles: set[tuple[str, str]] = set()
     for key, company_key, title_key in decisions:
-        target = requisition_roles if is_provider_key(key) else roles
+        keys, matched = _linked_keys({key} if key else set(), postings)
+        url_keys |= keys
+        target = requisition_roles if any(map(is_provider_key, keys)) else roles
         target.add((company_key, title_key))
-    for company, title, own_keys in postings:
-        matched = own_keys & keys
-        if matched:
-            role = (normalize_company(company), normalize_title(title))
-            provider = any(map(is_provider_key, matched | own_keys))
-            target = requisition_roles if provider else roles
-            target.add(role)
+        target.update(matched)
     return DecidedIndex(
-        url_keys=keys,
+        url_keys=frozenset(url_keys),
         roles=frozenset(roles),
         requisition_roles=frozenset(requisition_roles),
     )

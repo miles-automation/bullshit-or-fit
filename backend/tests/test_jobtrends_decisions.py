@@ -448,3 +448,68 @@ def test_posting_keys_adds_the_provider_id() -> None:
         "greenhouse:123",
     }
     assert posting_keys("https://x.test/a", "himalayas", "abc") == {"x.test/a"}
+
+
+GH_123 = "https://careers.acme.example/openings/123"
+
+
+def test_employer_link_to_a_requisition_keeps_other_requisitions() -> None:
+    tracked = _job(url=GH_123, provider="greenhouse", external_id="123")
+    other = _job(
+        url="https://careers.acme.example/openings/456",
+        provider="greenhouse",
+        external_id="456",
+    )
+    copy = _job(source="himalayas", url=GH_123, location="Remote - United States")
+    session = _Session(
+        [tracked, other, copy],
+        [_posting(tracked), _posting(other)],
+        [_stored(GH_123, "Acme", "Senior Software Engineer")],
+    )
+    result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
+    assert [r.url for r in result.roles] == [other.url]
+
+
+def test_provider_id_found_through_a_link_covers_its_other_urls() -> None:
+    tracked = _job(url=GH_123, provider="greenhouse", external_id="123")
+    moved = _job(
+        url="https://careers.acme.example/jobs/senior-engineer",
+        provider="greenhouse",
+        external_id="123",
+        title="Senior Engineer",
+    )
+    session = _Session(
+        [moved], [_posting(tracked)], [_stored(GH_123, "Acme", "Senior SWE")]
+    )
+    result = fit_roles(session, now=NOW)  # type: ignore[arg-type]
+    assert result.roles == []
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "same"),
+    [
+        (
+            "https://acme.example/job?jobId=123",
+            "https://acme.example/job?jobId=456",
+            False,
+        ),
+        (
+            "https://acme.example/job?jobId=123&utm_source=x",
+            "https://acme.example/job?jobId=123",
+            True,
+        ),
+    ],
+)
+def test_url_key_keeps_identifying_query_params(
+    first: str, second: str, same: bool
+) -> None:
+    assert (url_key(first) == url_key(second)) is same
+
+
+def test_parse_tracker_keeps_parentheses_before_a_link_title() -> None:
+    text = (
+        "| Company | Role | Link | Status |\n|---|---|---|---|\n"
+        '| Acme | SWE | [Posting](https://acme.example/jobs/engineer-(platform) "Acme Careers") | skipped |\n'
+    )
+    [row] = parse_tracker(text)
+    assert row.url == "https://acme.example/jobs/engineer-(platform)"
