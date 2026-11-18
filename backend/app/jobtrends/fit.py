@@ -29,7 +29,7 @@ _NON_ENGINEERING_MANAGER = re.compile(
     re.I,
 )
 _EXCLUDED_ROLE = re.compile(
-    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp"
+    r"\b(intern|internship|junior|jr|new grad|graduate|director|head of|vp|vice\s+president"
     r"|recruit\w*|sales|account|support|qa|test|tester|mechanical|electrical|hardware"
     r"|firmware|embedded|ios|android|mobile|network|civil|structural|field|clinical"
     r"|security|leader|customer|solutions|sales engineer|construction)\b",
@@ -632,6 +632,9 @@ class FitRole:
     clearance: str | None = None
     posted_at: datetime | None = None
     traceable: bool = True
+    role_id: str = ""
+    official_url: str | None = None
+    posting_text: str | None = None
 
     @property
     def listed_at(self) -> datetime:
@@ -789,10 +792,20 @@ def build_decided_index(
     )
 
 
+ACTIVE_APPLICATION_STATUSES = frozenset(
+    {"drafting", "submitted", "replied", "screen", "interview", "offer"}
+)
+
+
+def company_id(name: str) -> str:
+    return f"co:{normalize_company(name)}"
+
+
 @dataclass(frozen=True)
 class FitList:
     roles: list[FitRole]
     hidden: int = 0
+    active_companies: frozenset[str] = frozenset()
 
 
 def fit_roles(
@@ -807,6 +820,7 @@ def fit_roles(
     oldest = moment - timedelta(days=max_age_days)
     rows = session.execute(
         select(
+            AtsJob.id,
             AtsJob.source,
             AtsJob.company_name,
             AtsJob.title,
@@ -845,6 +859,7 @@ def fit_roles(
             AtsJob.url,
             AtsJob.provider,
             AtsJob.external_id,
+            AtsJob.posted_at,
         ).where(AtsJob.is_open.is_(True), AtsJob.source.in_(FIRST_PARTY_SOURCES))
     ).all()
     postings = [
@@ -852,16 +867,31 @@ def fit_roles(
         for r in [*first_party, *rows]
     ]
     index = first_party_index([(r.company_name, r.title) for r in first_party])
+    same_title: dict[tuple[str, str], dict[str, datetime | None]] = {}
+    for r in first_party:
+        if r.url:
+            role_key = (normalize_company(r.company_name), normalize_title(r.title))
+            same_title.setdefault(role_key, {})[r.url] = r.posted_at
+    official = {
+        role_key: next(iter(urls.items()))
+        for role_key, urls in same_title.items()
+        if len(urls) == 1
+    }
+    decision_rows = session.execute(
+        select(
+            FitDecision.url_key,
+            FitDecision.company_key,
+            FitDecision.title_key,
+            FitDecision.status,
+        )
+    ).all()
     decided = build_decided_index(
-        [
-            (r.url_key, r.company_key, r.title_key)
-            for r in session.execute(
-                select(
-                    FitDecision.url_key, FitDecision.company_key, FitDecision.title_key
-                )
-            ).all()
-        ],
-        postings,
+        [(r.url_key, r.company_key, r.title_key) for r in decision_rows], postings
+    )
+    active = frozenset(
+        f"co:{r.company_key}"
+        for r in decision_rows
+        if r.status in ACTIVE_APPLICATION_STATUSES
     )
     roles: dict[tuple[str, str, str | None], FitRole] = {}
     hidden: set[tuple[str, str]] = set()
@@ -872,7 +902,15 @@ def fit_roles(
             and comp_fits(r.comp_max, r.comp_currency)
         ):
             continue
-        if not posting_fresh(r.posted_at, oldest):
+        match = (
+            None
+            if r.source in FIRST_PARTY_SOURCES
+            else official.get(
+                (normalize_company(r.company_name), normalize_title(r.title))
+            )
+        )
+        posted_at = match[1] if match and match[1] is not None else r.posted_at
+        if not posting_fresh(posted_at, oldest):
             continue
         if language_blocks(r.content_text):
             continue
@@ -896,13 +934,22 @@ def fit_roles(
             team_size=r.team_size,
             first_seen=r.first_seen,
             clearance=clearance,
-            posted_at=r.posted_at,
+            posted_at=posted_at,
             traceable=is_traceable(r.source, r.company_name, r.title, index),
+            role_id=r.id,
+            official_url=r.url
+            if r.source in FIRST_PARTY_SOURCES
+            else (match and match[0]),
+            posting_text=r.content_text,
         )
         current = roles.get(key)
         if current is None or rank_key(role) < rank_key(current):
             roles[key] = role
-    return FitList(roles=sorted(roles.values(), key=rank_key), hidden=len(hidden))
+    return FitList(
+        roles=sorted(roles.values(), key=rank_key),
+        hidden=len(hidden),
+        active_companies=active,
+    )
 
 
 def _pay(role: FitRole) -> str:

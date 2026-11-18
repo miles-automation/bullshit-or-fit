@@ -235,6 +235,7 @@ NOW = datetime(2026, 11, 17, 12, tzinfo=UTC)
 
 def _job(**kw: Any) -> SimpleNamespace:  # noqa: ANN401
     base: dict[str, Any] = dict(
+        id="ats:acme:1",
         source="ats",
         company_name="Acme",
         title="Senior Software Engineer",
@@ -261,12 +262,15 @@ def _posting(job: SimpleNamespace) -> SimpleNamespace:
         url=job.url,
         provider=job.provider,
         external_id=job.external_id,
+        posted_at=job.posted_at,
     )
 
 
 def _stored(url: str | None, company: str, title: str) -> SimpleNamespace:
     key, company_key, title_key = _decision(url, company, title)
-    return SimpleNamespace(url_key=key, company_key=company_key, title_key=title_key)
+    return SimpleNamespace(
+        url_key=key, company_key=company_key, title_key=title_key, status="skipped"
+    )
 
 
 def test_fit_roles_hides_decided_roles_and_their_copies() -> None:
@@ -529,3 +533,35 @@ def test_url_key_keeps_query_order() -> None:
     assert url_key("https://a.example/j?jobId=123&jobId=456") != url_key(
         "https://a.example/j?jobId=456&jobId=123"
     )
+
+
+def test_fit_roles_dates_an_aggregator_copy_by_the_company_posting() -> None:
+    old = datetime(2026, 7, 30, tzinfo=UTC)
+    company = _job(posted_at=old, first_seen=old)
+    company_row = _posting(company)
+    copy = _job(
+        source="himalayas",
+        url="https://himalayas.app/companies/acme/jobs/sse",
+        posted_at=NOW,
+        location="Remote - United States",
+    )
+    result = fit_roles(_Session([copy], [company_row], []), now=NOW)  # type: ignore[arg-type]
+    assert result.roles == []
+    fresh_row = SimpleNamespace(**{**vars(_posting(company)), "posted_at": NOW})
+    result = fit_roles(_Session([copy], [fresh_row], []), now=NOW)  # type: ignore[arg-type]
+    assert [r.official_url for r in result.roles] == [company.url]
+
+
+def test_fit_roles_does_not_guess_between_same_title_requisitions() -> None:
+    one = _job(url="https://jobs.ashbyhq.com/acme/0b5e2a1c-1111-2222-3333-444455556666")
+    two = _job(url="https://jobs.ashbyhq.com/acme/a9cb5fd3-1acb-474e-ab7c-b811eeb5b0c2")
+    copy = _job(
+        source="himalayas",
+        url="https://himalayas.app/companies/acme/jobs/sse",
+        location="Remote - United States",
+    )
+    result = fit_roles(
+        _Session([copy], [_posting(one), _posting(two)], []),
+        now=NOW,  # type: ignore[arg-type]
+    )
+    assert [r.official_url for r in result.roles] == [None]
